@@ -1,42 +1,64 @@
-# Code Availability
+# Sequence-to-Function SNP-eQTL Analysis Code
 
-This folder is organized by manuscript output rather than by internal analysis
-workspace.
+This repository contains the analysis and plotting code for the manuscript
+benchmarking Borzoi and AlphaGenome variant-effect predictions against
+MAGENTA ancestry-stratified eQTL results.
 
-Figures 1 and 2 are not included here because they were generated on the local
-machine and were explicitly skipped for this packaging pass.
+The repository is organized by manuscript output. Scripts expect the companion
+data-availability package to provide the corresponding input tables.
 
-## Main Entry Point
+## Reproducing Outputs
 
-`reproduce_published_figures_and_tables.sh` redraws the packaged Figure 3 and
-Supplementary Figure S1 panels from the packaged data files, then regenerates
-the derived Supplementary Tables S2-S4.
+Run the top-level script from the repository root:
 
-The runner defaults to `python3`; set `PYTHON=/path/to/python` before
-running it to use a different compatible Python.
+```bash
+bash reproduce_published_figures_and_tables.sh
+```
 
-The plotting scripts are:
+By default, the runner expects the companion data package at
+`../data_availability`. To use a different location:
 
-- `figure3_distance_matched_auroc/make_figure3_distance_matched_auroc.py`
-- `figureS1_maf_stratified_auroc/make_figureS1_maf_stratified_auroc.py`
+```bash
+DATA_DIR=/path/to/data_availability bash reproduce_published_figures_and_tables.sh
+```
 
-## Folder Guide
+The runner uses `python3` by default. Set `PYTHON=/path/to/python` to use a
+specific Python interpreter.
 
-- `figure3_distance_matched_auroc/`: code for the distance-matched AUROC
-  bootstrap boxplot in Figure 3.
-- `figureS1_maf_stratified_auroc/`: code for the MAF-stratified
-  distance-matched AUROC analysis and Supplementary Figure S1.
-- `supplementary_tables/`: scripts for the positive-set summaries and
-  manuscript table summaries.
-- `model_scoring/`: batch preparation, model-scoring wrappers, and result
-  combination code for the fine-mapped eQTL benchmark.
-- `nominal_eqtl_support/`: companion nominal-eQTL benchmark support code from
-  the same manuscript project. Final Figure 1/2 plotting is not included here.
+## Manuscript Figure Scripts
+
+- `figure1_corr_concordance/make_figure1_corr_concordance.py`: regenerates
+  Figure 1, showing S2F model correlation and direction concordance with eQTL
+  effect sizes across TSS-distance and ancestry strata.
+- `figure2_model_convergence/make_figure2_model_convergence.py`: regenerates
+  Figure 2, showing inter-model convergence between Borzoi and AlphaGenome.
+- `figure3_distance_matched_auroc/make_figure3_distance_matched_auroc.py`:
+  regenerates Figure 3, the distance-matched AUROC bootstrap boxplot.
+- `figureS1_maf_stratified_auroc/make_figureS1_maf_stratified_auroc.py`:
+  regenerates Supplementary Figure S1, the MAF-stratified distance-matched
+  AUROC analysis.
+
+## Supporting Analysis Code
+
+- `model_scoring/`: batch preparation, model-scoring wrappers, and prediction
+  table construction for the fine-mapped eQTL benchmark.
+- `nominal_eqtl_support/`: nominal-eQTL benchmark batch preparation, result
+  collection, and plot-input construction.
 - `negative_control_sensitivity/`: scripts for negative-control contamination
-  and rerun-confirmed sensitivity summaries.
+  and rerun-confirmed sensitivity analyses.
+- `supplementary_tables/`: scripts for derived manuscript summary tables.
 
-## Notes
+## Python Dependencies
 
-The code uses the paper-facing file names in this package. Some source tables
-retain historical provenance columns used during analysis; those columns are
-not part of the public folder or file naming.
+The plotting and table scripts use standard scientific Python packages:
+
+- `numpy`
+- `pandas`
+- `matplotlib`
+- `seaborn`
+- `scipy`
+- `scikit-learn`
+
+Some model-scoring wrappers require additional model-specific environments for
+Borzoi or AlphaGenome inference. The plotting scripts only require the summary
+tables distributed with the companion data package.

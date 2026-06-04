@@ -2,15 +2,27 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
-DATA_DIR="${SCRIPT_DIR}/../data_availablity"
+DATA_DIR="${DATA_DIR:-${SCRIPT_DIR}/../data_availability}"
 PYTHON="${PYTHON:-python3}"
 
 FIGURE_OUT="${DATA_DIR}/regenerated_figures"
 TABLE_OUT="${DATA_DIR}/regenerated_tables"
 
+mkdir -p "${FIGURE_OUT}/figure1_corr_concordance"
+mkdir -p "${FIGURE_OUT}/figure2_model_convergence"
 mkdir -p "${FIGURE_OUT}/figure3_distance_matched_auroc"
 mkdir -p "${FIGURE_OUT}/figureS1_maf_stratified_auroc"
 mkdir -p "${TABLE_OUT}"
+
+"${PYTHON}" "${SCRIPT_DIR}/figure1_corr_concordance/make_figure1_corr_concordance.py" \
+  --nominal_tool_performance "${DATA_DIR}/figure1_corr_concordance/nominal_tool_performance_results.tsv" \
+  --finemapped_correlations "${DATA_DIR}/figure1_corr_concordance/finemapped_stratified_correlations.tsv" \
+  --finemapped_concordance "${DATA_DIR}/figure1_corr_concordance/finemapped_stratified_concordance.tsv" \
+  --output_dir "${FIGURE_OUT}/figure1_corr_concordance"
+
+"${PYTHON}" "${SCRIPT_DIR}/figure2_model_convergence/make_figure2_model_convergence.py" \
+  --model_convergence_results "${DATA_DIR}/figure2_model_convergence/model_convergence_results.tsv" \
+  --output_dir "${FIGURE_OUT}/figure2_model_convergence"
 
 "${PYTHON}" "${SCRIPT_DIR}/figure3_distance_matched_auroc/make_figure3_distance_matched_auroc.py" \
   --plot_from_results "${DATA_DIR}/figure3_distance_matched_auroc/figure3_distance_matched_auroc_bootstrap.tsv" \
