@@ -1,0 +1,114 @@
+design_version: native_ld_v1
+status: locked_implementation_in_progress
+created: 2026-08-20
+
+scope:
+  source_pairs: ../../results/analysis_pairs.tsv.gz
+  description: all common-complete scored pairs in the existing general, AD Tier 1, and AD Tier 2 panels
+  pool_overlapping_scientific_panels: false
+  new_sequence_model_inference: false
+  panels:
+    - general
+    - ad_tier1_excluding_apoe
+    - ad_tier1_apoe_only
+    - ad_tier2
+  ancestries: [AA, CH, NHW]
+  deployment_primary: ancestry_native
+  common_testability_sensitivity: exact_three_way_shared
+
+genotypes:
+  build: hg38
+  source: original_MAGENTA_TOPMed_imputed_QCed_MAC10_PLINK_on_vstor
+  genotype_field_primary: PLINK_hardcall
+  plink_prefix_templates:
+    AA: /mnt/vstor/Data14/metabrain_lasso/rna_seq_norm/aa_233/geno/imp_fil/geno_final/plink_by_chr/MAGENTA_AA_TOPMed_imputed_b38_chr_1_22_filter_imp_r2_0.8_and_genotyped_var.no_outlier_MAC10.plink_qc.{chromosome}
+    CH: /mnt/vstor/Data14/metabrain_lasso/rna_seq_norm/MAGENTA_Hispanic/geno/imp_fil/geno_final/plink_by_chr/MAGENTA_HISP_TOPMed_imputed_b38_chr_1_22_filter_imp_r2_0.8_and_genotyped_var.no_outlier_MAC10.plink_qc.{chromosome}
+    NHW: /mnt/vstor/Data14/metabrain_lasso/rna_seq_norm/nhw_239/geno/imp_fil/geno_final/plink_by_chr/MAGENTA_NHW_TOPMed_imputed_b38_chr_1_22_filter_imp_r2_0.8_and_genotyped_var.no_outlier_MAC10.plink_qc.{chromosome}
+  expression_sample_lists:
+    AA: /mnt/vstor/Data14/xxs410_xinyu/SuShiE_work/magenta_geno_QC/AA_sample_int_w_exp_tpm.txt
+    CH: /mnt/vstor/Data14/metabrain_lasso/filer_maf_current_manuscript_20260831/keep/CH.exact_qtl_cohort.keep
+    NHW: /mnt/vstor/Data14/xxs410_xinyu/SuShiE_work/magenta_geno_QC/NHW_sample_int_w_exp_tpm.txt
+  sample_id_matching: strip_leading_ascii_letters_and_underscores_then_require_unique_core
+  CH_definition: IHG_only
+  PER_excluded_from_CH: true
+  discovered_expression_sample_coverage:
+    AA: {requested: 224, matched: 224, source_fam_samples: 231}
+    CH: {requested: 209, matched: 209, source_fam_samples: 341}
+    NHW: {requested: 235, matched: 235, source_fam_samples: 240}
+  archival_plink_paths_supplied_by_user:
+    path_prefix: /mnt/vstor
+    availability: present_and_selected_as_primary_source
+
+ld:
+  measure: PLINK1_unphased_hardcall_r2_from_original_QCed_MAC10_PLINK
+  rationale: uses_the_exact_vstor_equivalent_of_the_user_supplied_analysis_inputs
+  missing_genotype: pairwise_complete_with_variant_missingness_reported
+  source_bim_allele_convention: A1_ALT_A2_REF_verified_per_chromosome
+  source_frq_frequency_semantics: A1_ALT_frequency_under_keep_allele_order
+  genotype_maf_calculation: min(ALT_frequency,1-ALT_frequency)
+  minimum_nonmissing_samples: 20
+  minimum_genotype_variance: 1.0e-8
+  maximum_physical_pair_distance_bp: 200000
+  sparse_edge_floor_r2: 0.1
+  clump_threshold_primary_r2: 0.2
+  clump_threshold_sensitivities_r2: [0.1, 0.5]
+  close_proxy_threshold_r2: 0.8
+  clump_membership: direct_index_to_variant_only_no_transitive_chains
+  deterministic_tiebreaker: exact_pair_key
+
+models:
+  methods:
+    - borzoi
+    - alphagenome
+    - consensus
+  consensus_strength: mean_of_model_absolute_score_percentile_ranks_within_analysis_scope
+  consensus_direction: sign_of_sum_of_percentile_scaled_signed_model_ranks
+
+ranking:
+  primary: global_absolute_score
+  global_percentile_weight:
+    general: inverse_gene_inclusion_probability
+    AD: unit_weight
+  companion: within_gene_absolute_score
+  within_gene_percentile_weight: unweighted_exact_within_gene
+  cutoffs_percent: [0.5, 1, 2, 5, 10]
+  primary_cutoff_percent: 1
+  outcome_blind: true
+
+endpoints:
+  stringent_p: 2.02e-5
+  paper_exact_requires_q_lt_0_05: true
+  association:
+    - two_sided_eqtl_p_distribution
+    - absolute_eqtl_z
+    - probability_of_superiority
+    - stringent_yield
+  directional:
+    aligned_z: sign_model_score_times_eqtl_z
+    outcomes:
+      - stringent_directionally_supported
+      - stringent_opposite_direction
+      - unsupported_or_indeterminate
+  regional:
+    - exact_index_supported
+    - regional_only_supported_by_r2_ge_0_8_proxy_same_gene
+    - no_detected_regional_support
+    - minimum_group_p
+    - simes_group_p
+    - acat_group_p
+    - proxy_count
+
+uncertainty:
+  replicates: 1000
+  seed: 20260820
+  primary_cluster: gene
+  sensitivity_cluster:
+    general: overlapping_gene_plus_minus_100kb_windows
+    AD: published_compound_locus
+  paired_across_models: true
+
+interpretation:
+  ancestry_predictions_are_sequence_invariant: true
+  ancestry_results_describe_agreement_with_ancestry_specific_eqtl_evidence: true
+  regional_support_is_not_causal_variant_identification: true
+  nonsignificant_pairs_label: unsupported_or_indeterminate

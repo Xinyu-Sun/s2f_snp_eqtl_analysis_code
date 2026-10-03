@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run AlphaGenome API scoring for one redo SuSiE chunk.
+Run AlphaGenome API scoring for one fine-mapped eQTL scoring chunk.
 
 Outputs (relative to CWD):
   results/alphagenome/{ancestry}/chunk_####/

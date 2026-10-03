@@ -10,7 +10,7 @@ This script:
 5. Summarizes contamination among low-PIP negatives, with manuscript summaries focused on
    loci whose top anchor PIP is at least 0.9
 6. Merges contamination metrics back to model-specific scored rows
-7. Reruns the distance-matched bootstrap AUROC analysis with progressively cleaner negatives:
+7. Repeats the distance-matched bootstrap AUROC analysis with progressively cleaner negatives:
    - PIP < 0.01
    - PIP < 0.01 and anchor r^2 < 0.2
    - PIP < 0.01 and anchor r^2 < 0.1
@@ -1023,7 +1023,7 @@ def main() -> None:
     print("[4/6] Generating contamination figure")
     plot_contamination_summary(variant_level, output_dir)
 
-    print("[5/6] Merging LD flags back to scored rows and rerunning AUROC")
+    print("[5/6] Merging LD flags back to scored rows and recomputing AUROC")
     scored_with_ld = merge_contamination_to_scored_rows(scored_df, variant_level)
     scored_with_ld = add_tss_distance(scored_with_ld, base_dir)
     auroc_summary, auroc_bootstrap = run_auroc_sensitivity(

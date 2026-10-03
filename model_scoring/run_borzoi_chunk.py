@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Run Borzoi SED scoring for one redo SuSiE chunk.
+Run Borzoi SED scoring for one fine-mapped eQTL scoring chunk.
 
 Outputs (relative to CWD):
   results/borzoi/{ancestry}/chunk_####/

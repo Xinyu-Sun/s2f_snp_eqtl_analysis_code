@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Recompute negative-cleaning AUROC sensitivity using collected rerun outputs.
+Recompute negative-cleaning AUROC sensitivity using collected rescoring outputs.
 
 Positives always come from the original scored SuSiE universe.
 Negatives are:
   - original: original scored universe with PIP < 0.01
-  - LD-cleaned: collected rerun outputs for each filtered negative definition
+  - LD-cleaned: collected rescoring outputs for each filtered negative definition
 """
 
 from __future__ import annotations
@@ -60,17 +60,17 @@ def normalize_scored_df(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def load_rerun_negative_table(base_dir: Path, negative_definition: str) -> pd.DataFrame:
+def load_rescored_negative_table(base_dir: Path, negative_definition: str) -> pd.DataFrame:
     path = (
         base_dir
         / "manuscript_negative_contamination"
         / "filtered_predictions"
         / negative_definition
-        / "rerun_analysis"
+        / "rescoring_analysis"
         / "susie_s2f_combined.tsv.gz"
     )
     if not path.exists():
-        raise FileNotFoundError(f"Missing rerun analysis table: {path}")
+        raise FileNotFoundError(f"Missing rescoring analysis table: {path}")
     df = pd.read_csv(path, sep="\t", low_memory=False)
     df = df[df["tool"].isin(TOOLS) & df["ancestry"].isin(ANCESTRIES)].copy()
     return normalize_scored_df(df)
@@ -87,7 +87,7 @@ def compute_gap_summary(summary_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Rerun-based negative-cleaning AUROC sensitivity")
+    parser = argparse.ArgumentParser(description="Rescoring-based negative-cleaning AUROC sensitivity")
     parser.add_argument("--base-dir", type=Path, default=Path.cwd())
     parser.add_argument(
         "--output-dir",
@@ -110,8 +110,8 @@ def main() -> None:
 
     negative_tables = {
         "pip_lt_0.01": original[original["pip"] < 0.01].copy(),
-        "pip_lt_0.01_ld_lt_0.2": add_tss_distance(load_rerun_negative_table(base_dir, "pip_lt_0.01_ld_lt_0.2"), base_dir),
-        "pip_lt_0.01_ld_lt_0.1": add_tss_distance(load_rerun_negative_table(base_dir, "pip_lt_0.01_ld_lt_0.1"), base_dir),
+        "pip_lt_0.01_ld_lt_0.2": add_tss_distance(load_rescored_negative_table(base_dir, "pip_lt_0.01_ld_lt_0.2"), base_dir),
+        "pip_lt_0.01_ld_lt_0.1": add_tss_distance(load_rescored_negative_table(base_dir, "pip_lt_0.01_ld_lt_0.1"), base_dir),
     }
 
     summary_rows = []
@@ -180,9 +180,9 @@ def main() -> None:
     summary_df = add_auc_delta_columns(summary_df)
     gap_df = compute_gap_summary(summary_df)
 
-    summary_df.to_csv(output_dir / "auroc_negative_cleaning_rerun_confirmed_summary.tsv", sep="\t", index=False)
-    gap_df.to_csv(output_dir / "auroc_negative_cleaning_rerun_confirmed_gap_summary_pip0.9.tsv", sep="\t", index=False)
-    print("Wrote rerun-confirmed AUROC sensitivity outputs.")
+    summary_df.to_csv(output_dir / "auroc_negative_cleaning_rescored_summary.tsv", sep="\t", index=False)
+    gap_df.to_csv(output_dir / "auroc_negative_cleaning_rescored_gap_summary_pip0.9.tsv", sep="\t", index=False)
+    print("Wrote rescored AUROC sensitivity outputs.")
 
 
 if __name__ == "__main__":

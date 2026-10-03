@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Prepare redo SuSiE inputs from per-gene all-variant PIP files.
+Prepare fine-mapped eQTL benchmark inputs from per-gene all-variant PIP files.
 
 The original `outputs_susie` input used top-level MAGENTA_eQTLs_susie_pip_w_cs
 files, which only contain variants with CS != 0. This script instead reads
-per-gene `*_susie_pip_w_cs_corrected_n.txt.gz` files, keeps all PIP >= 0.5
+the per-gene SuSiE PIP files (all variants), keeps all PIP >= 0.5
 variants, samples additional low-PIP negatives, samples intermediate-PIP
 variants for manuscript-style AUROC comparisons, and writes prediction chunks.
 
-Outputs live under the redo result directory:
+Outputs live under the result directory:
   results/selected_pairs.tsv.gz
   results/predicted_pairs_reused.tsv.gz
   results/missing_pairs_for_prediction.tsv.gz
@@ -323,7 +323,7 @@ def select_pairs(
     negatives = pd.concat(sampled_negatives, ignore_index=True) if sampled_negatives else pd.DataFrame(columns=df.columns)
     intermediates = pd.concat(sampled_intermediates, ignore_index=True) if sampled_intermediates else pd.DataFrame(columns=df.columns)
     selected = pd.concat([positives, negatives, intermediates], ignore_index=True)
-    selected["redo_label"] = np.select(
+    selected["selection_label"] = np.select(
         [
             selected["pip"] >= pip_positive_min,
             selected["pip"] < negative_pip_max,
@@ -454,7 +454,7 @@ def main() -> None:
         ChunkConfig(results_dir=args.results_dir, pairs_per_chunk=args.pairs_per_chunk, seed=args.seed),
     )
 
-    summary = selected.groupby(["ancestry", "redo_label"], observed=True).size().reset_index(name="n")
+    summary = selected.groupby(["ancestry", "selection_label"], observed=True).size().reset_index(name="n")
     summary.to_csv(args.results_dir / "analysis" / "selected_pair_summary.tsv", sep="\t", index=False)
     print("\n[summary]")
     print(summary.to_string(index=False))

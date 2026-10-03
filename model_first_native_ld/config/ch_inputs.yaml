@@ -1,0 +1,30 @@
+# CH inputs of the model-first analysis. These entries define the CH cohort, eQTL outcomes, and LD
+# used by code/ch_inputs/; AA and NHW inputs are defined in design.yaml.
+scope:
+  eqtl_release: eqtl_four_population_20260922
+  eqtl_mode: regular
+  ch_participants: 209
+  ch_genes_in_panel: 419
+  ch_pairs_in_locked_model_score_manifest: 227287
+  new_sequence_model_inference: false
+
+ch_ld:
+  ancestry: CH
+  chromosomes: 22
+  cohort_size: 209
+  source: exact_CH_QTL_cohort_keep_file
+  plink_prefix_template: /mnt/vstor/Data14/metabrain_lasso/rna_seq_norm/MAGENTA_Hispanic/geno/imp_fil/geno_final/plink_by_chr/MAGENTA_HISP_TOPMed_imputed_b38_chr_1_22_filter_imp_r2_0.8_and_genotyped_var.no_outlier_MAC10.plink_qc.{chromosome}
+  keep_file: /mnt/vstor/Data14/metabrain_lasso/filer_maf_current_manuscript_20260831/keep/CH.exact_qtl_cohort.keep
+
+primary_analysis:
+  panel: general
+  deployment: native
+  clump_threshold_r2: 0.2
+  rank_view: global
+  cutoff_percent: 1
+  outcomes_used_to_construct_ranks_or_clumps: false
+
+provenance:
+  ch_ld_input_summary: ../qc/ch_ld_input_summary.json
+  merge_summary: ../qc/native_ld_merge_summary.json
+  ch_input_code: ../code/ch_inputs/

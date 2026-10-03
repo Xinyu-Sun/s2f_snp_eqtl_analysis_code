@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Prepare only the incremental nominal-redo records needed to extend the benchmark
+Prepare only the incremental nominal-eQTL records needed to extend the benchmark
 from 5,000 to 10,000 records per population x TSS-distance cell.
 
 This intentionally anchors the completed 5k run: all records already present in
-nominal_eqtl_redo/outputs/inputs are treated as selected and are not re-run.
+nominal_eqtl_base/outputs/inputs are treated as selected and are not scored again.
 Additional records are sampled from the remaining eligible records up to the new
 cell cap.
 """
@@ -18,28 +18,28 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-BASE_REDO_ROOT = PROJECT_ROOT / "nominal_eqtl_redo"
-BASE_SCRIPT_DIR = BASE_REDO_ROOT / "scripts"
+BASE_NOMINAL_ROOT = PROJECT_ROOT / "nominal_eqtl_base"
+BASE_SCRIPT_DIR = BASE_NOMINAL_ROOT / "scripts"
 sys.path.insert(0, str(BASE_SCRIPT_DIR))
 
-import prepare_nominal_redo_batches as base  # noqa: E402
+import prepare_nominal_batches as base  # noqa: E402
 
 
 def topup_root():
     return Path(__file__).resolve().parents[1]
 
 
-def read_existing_selected_ids(base_redo_root):
+def read_existing_selected_ids(base_nominal_root):
     selected = set()
-    pairs_paths = sorted((base_redo_root / "outputs" / "inputs" / "borzoi").glob("*/*/chunk_*/pairs.tsv"))
+    pairs_paths = sorted((base_nominal_root / "outputs" / "inputs" / "borzoi").glob("*/*/chunk_*/pairs.tsv"))
     if not pairs_paths:
-        raise RuntimeError("No existing 5k selected pairs found under {}".format(base_redo_root))
+        raise RuntimeError("No existing 5k selected pairs found under {}".format(base_nominal_root))
 
     for path in pairs_paths:
         with path.open(newline="") as f:
             reader = csv.DictReader(f, delimiter="\t")
             for row in reader:
-                rid = row.get("nominal_redo_record_id")
+                rid = row.get("nominal_record_id")
                 if rid:
                     selected.add(rid)
     return selected
@@ -57,12 +57,12 @@ def select_topup_rows(rows, existing_ids, seed, max_pairs_per_cell):
         for tss_bin in base.TSS_BINS:
             cell = grouped.get((population, tss_bin), [])
             target_n = min(max_pairs_per_cell, len(cell))
-            old_in_cell = [row for row in cell if row["nominal_redo_record_id"] in existing_ids]
+            old_in_cell = [row for row in cell if row["nominal_record_id"] in existing_ids]
             n_needed = max(0, target_n - len(old_in_cell))
             if n_needed == 0:
                 continue
 
-            candidates = [row for row in cell if row["nominal_redo_record_id"] not in existing_ids]
+            candidates = [row for row in cell if row["nominal_record_id"] not in existing_ids]
             if len(candidates) < n_needed:
                 raise RuntimeError(
                     "Not enough top-up candidates for {} {}: need {}, have {}".format(
@@ -74,7 +74,7 @@ def select_topup_rows(rows, existing_ids, seed, max_pairs_per_cell):
             picked_indices = sorted(rng.sample(range(len(candidates)), n_needed))
             picked = [candidates[i] for i in picked_indices]
             topup.extend(picked)
-            final_selected_ids.update(row["nominal_redo_record_id"] for row in picked)
+            final_selected_ids.update(row["nominal_record_id"] for row in picked)
 
     topup.sort(key=base.sort_key)
     return topup, final_selected_ids
@@ -83,7 +83,7 @@ def select_topup_rows(rows, existing_ids, seed, max_pairs_per_cell):
 def count_existing_by_cell(rows, existing_ids):
     out = []
     for row in rows:
-        if row["nominal_redo_record_id"] not in existing_ids:
+        if row["nominal_record_id"] not in existing_ids:
             continue
         out.append(row)
     return base.count_by(out, ["population", "tss_distance_bin"])
@@ -98,7 +98,7 @@ def prepare(args):
 
     eqtl_path = (root / args.eqtls).resolve()
     rows, n_filtered_before_dedup = base.read_eqtl_rows(eqtl_path)
-    existing_ids = read_existing_selected_ids(BASE_REDO_ROOT)
+    existing_ids = read_existing_selected_ids(BASE_NOMINAL_ROOT)
     topup_rows, final_selected_ids = select_topup_rows(
         rows,
         existing_ids,
@@ -106,14 +106,14 @@ def prepare(args):
         max_pairs_per_cell=args.max_pairs_per_cell,
     )
 
-    final_rows = [row for row in rows if row["nominal_redo_record_id"] in final_selected_ids]
+    final_rows = [row for row in rows if row["nominal_record_id"] in final_selected_ids]
     final_rows.sort(key=base.sort_key)
 
     (manifests_root / "seed.txt").write_text("{}\n".format(args.seed))
     (manifests_root / "sampling_design.txt").write_text(
         "population_level_nominal_eqtls_10k_topup_reusing_5k_predictions\n"
         "eqtls={}\n".format(eqtl_path)
-        + "base_redo_root={}\n".format(BASE_REDO_ROOT)
+        + "base_nominal_root={}\n".format(BASE_NOMINAL_ROOT)
         + "populations={}\n".format(",".join(base.POPULATIONS))
         + "tss_bins={}\n".format(",".join(base.TSS_BINS))
         + "max_pairs_per_population_tss_cell={}\n".format(args.max_pairs_per_cell)
@@ -184,7 +184,7 @@ def prepare(args):
                     base.write_tsv(
                         manifest_path,
                         [
-                            "nominal_redo_record_id",
+                            "nominal_record_id",
                             "chromosome",
                             "position",
                             "ref_allele",

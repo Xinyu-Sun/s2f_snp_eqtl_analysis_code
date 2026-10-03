@@ -76,7 +76,7 @@ def subset_existing(path: Path, selected_keys: pd.DataFrame, source_label: str) 
     df = df[df["tool"].isin(TOOLS) & df["ancestry"].isin(ANCESTRIES)].copy()
     keyed = add_keys(df)
     subset = keyed.merge(selected_keys, on=key_cols(), how="inner")
-    subset["redo_score_source"] = source_label
+    subset["prediction_source"] = source_label
     print(f"[reuse] {source_label}: {len(subset):,}")
     return subset
 
@@ -132,7 +132,7 @@ def main() -> None:
     new_dfs = collect_new(results_dir)
     if new_dfs:
         new = pd.concat(new_dfs, ignore_index=True)
-        new["redo_score_source"] = "new_auroc_expanded_prediction"
+        new["prediction_source"] = "new_auroc_expanded_prediction"
         pieces.append(new)
         print(f"[new] expanded predictions collected: {len(new):,}")
     else:

@@ -2,7 +2,7 @@
 """
 Prepare an expanded SuSiE prediction set for AUROC analyses.
 
-This is a larger, AUROC-focused rerun. It uses the exact scored-positive
+This is a larger, AUROC-focused prediction set. It uses the exact scored-positive
 universe from the original outputs_susie table (PIP >= 0.5, known TSS bin),
 then samples low-PIP and intermediate-PIP background variants within ancestry
 x TSS x MAF strata so both vanilla distance-matched and MAF-stratified AUROC
@@ -25,7 +25,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parents[1]
 COMMON_BASE = Path("/mnt/vstor/Data14/xxs410_xinyu/seq2func_related/common_eqtl_snp_proj")
 OLD_COMBINED = COMMON_BASE / "outputs_susie" / "analysis" / "susie_s2f_combined.tsv.gz"
-CURRENT_REDO_COMBINED = BASE_DIR / "results" / "analysis" / "susie_s2f_combined.tsv.gz"
+CURRENT_COMBINED = BASE_DIR / "results" / "analysis" / "susie_s2f_combined.tsv.gz"
 TOOLS = ["borzoi", "alphagenome"]
 ANCESTRIES = ["AA", "CH", "NHW"]
 RAW_SUSIE_FILES = {
@@ -272,7 +272,7 @@ def load_original_positive_pairs() -> pd.DataFrame:
     pos["maf_bin"] = compute_maf_bin(pos["maf"])
     pos = pos[pos["maf_bin"].notna()].copy()
     pos["pip_class"] = "positive"
-    pos["redo_label"] = "positive_pip_ge_0.5_in_original_table"
+    pos["selection_label"] = "positive_pip_ge_0.5_in_original_table"
     pos["population"] = pos["ancestry"]
     pos["variant_id"] = (
         pos["chromosome"].astype(str) + ":"
@@ -289,7 +289,7 @@ def load_original_positive_pairs() -> pd.DataFrame:
 
 def load_scored_tool_keys(extra_combined: Path | None) -> pd.DataFrame:
     pieces = []
-    for path in [OLD_COMBINED, CURRENT_REDO_COMBINED, extra_combined]:
+    for path in [OLD_COMBINED, CURRENT_COMBINED, extra_combined]:
         if path is None or not path.exists():
             continue
         df = pd.read_csv(path, sep="\t", low_memory=False)
@@ -486,7 +486,7 @@ def main() -> None:
 
     selected = pd.concat([positives, low, intermediate], ignore_index=True)
     selected = selected.drop_duplicates(subset=_variant_key_cols(), keep="first")
-    selected["redo_label"] = selected["pip_class"].map(
+    selected["selection_label"] = selected["pip_class"].map(
         {
             "positive": "positive_pip_ge_0.5_in_original_table",
             "low": "sampled_negative_pip_lt_0.01",
@@ -522,11 +522,11 @@ def main() -> None:
         ChunkConfig(args.results_dir, args.pairs_per_chunk, args.seed),
     )
 
-    summary = selected.groupby(["ancestry", "redo_label"], observed=True).size().reset_index(name="n")
+    summary = selected.groupby(["ancestry", "selection_label"], observed=True).size().reset_index(name="n")
     summary.to_csv(args.results_dir / "analysis" / "selected_pair_summary.tsv", sep="\t", index=False)
 
     strata_summary = (
-        selected.groupby(["ancestry", "redo_label", "tss_distance_bin", "maf_bin"], observed=True)
+        selected.groupby(["ancestry", "selection_label", "tss_distance_bin", "maf_bin"], observed=True)
         .size()
         .reset_index(name="n")
     )
@@ -540,7 +540,7 @@ def main() -> None:
     )
     tool_summary["reused"] = tool_summary["reused"].fillna(0).astype(int)
     tool_summary = (
-        tool_summary.groupby(["tool", "ancestry", "redo_label"], observed=True)
+        tool_summary.groupby(["tool", "ancestry", "selection_label"], observed=True)
         .agg(requested_pairs=("gene_id", "size"), reused_pairs=("reused", "sum"))
         .reset_index()
     )

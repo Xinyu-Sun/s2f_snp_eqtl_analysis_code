@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect top-up chunk outputs while preserving nominal-redo metadata columns."""
+"""Collect top-up chunk outputs while preserving nominal-eQTL metadata columns."""
 
 import argparse
 import csv
