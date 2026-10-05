@@ -1,4 +1,4 @@
-"""B3. One pre-specified test of the group difference.
+"""B3. The primary test of the group difference.
 
 Model, fitted within each group (equivalent to a pooled logistic model in which every term interacts with group):
     high-PIP status ~ x + natural cubic spline(log10 TSS distance, 4 df, centred) + log10(MAF)

@@ -45,7 +45,7 @@ def main() -> None:
         raise RuntimeError("Primary figure inputs are empty")
 
     plt.rcParams.update({
-        "font.family": "DejaVu Sans", "font.size": 9,
+        "font.family": "Arial", "pdf.fonttype": 42, "font.size": 9,
         "axes.spines.top": False, "axes.spines.right": False,
         "axes.titleweight": "bold", "figure.dpi": 150,
     })
@@ -92,14 +92,14 @@ def main() -> None:
             exact_values.append(100 * rows.loc["index_stringent_association", "selected_yield"])
             regional_values.append(100 * rows.loc["regional_only_supported", "selected_yield"])
             no_values.append(100 * rows.loc["no_detected_regional_support", "selected_yield"])
-    axis.bar(x, exact_values, color="#2A6F97", label="Exact lead pair")
-    axis.bar(x, regional_values, bottom=exact_values, color="#74C0A8", label="Regional-only")
+    axis.bar(x, exact_values, color="#2A6F97", label="Exact support")
+    axis.bar(x, regional_values, bottom=exact_values, color="#74C0A8", label="Close-proxy support")
     axis.bar(x, no_values, bottom=np.asarray(exact_values) + np.asarray(regional_values), color="#D9DEE3", label="No detected support")
     axis.set_xticks(x, xlabels, rotation=55, ha="right")
     axis.set_ylabel("Top-1% lead pairs (%)")
     axis.set_title("Lead-pair and close-proxy support")
     axis.set_ylim(0, 100)
-    axis.legend(frameon=False, fontsize=8, loc="lower left")
+    axis.legend(frameon=True, framealpha=0.92, edgecolor="none", fontsize=8, loc="upper left")
     axis.text(-0.17, 1.08, "B", transform=axis.transAxes, fontsize=13, fontweight="bold")
 
     axis = bottom_axes[1]
@@ -153,7 +153,6 @@ def main() -> None:
     axis.grid(axis="y", alpha=0.25)
     axis.text(-0.17, 1.08, "D", transform=axis.transAxes, fontsize=13, fontweight="bold")
 
-    figure.suptitle("Ancestry-specific model-first prioritization after direct LD clumping (r² ≥ 0.2)", fontsize=13, fontweight="bold", y=1.06)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(args.output, dpi=300, bbox_inches="tight")
     figure.savefig(args.output.with_suffix(".pdf"), bbox_inches="tight")

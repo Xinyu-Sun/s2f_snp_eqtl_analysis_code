@@ -23,8 +23,8 @@ def load_pairs(path):
     for c in ["pip", "beta", "std_error", "distance_to_tss", "borzoi_score", "alphagenome_score", "maf"]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df["abs_z"] = (df["beta"] / df["std_error"]).abs()
-    # The released table carries TSS distance and cohort MAF only for CH rows; fill AA/NHW from the
-    # pipeline's gene TSS table (FU_GENE_TSS) and the exact-cohort PLINK MAF table (FU_MAF).
+    # The benchmark table carries TSS distance and cohort MAF for every row; rows that lack them are filled from the
+    # pipeline's gene TSS table (FU_GENE_TSS) and the exact-cohort PLINK MAF table (FU_MAF, joined on chr:pos_REF_ALT).
     tss_path = os.environ.get("FU_GENE_TSS")
     if tss_path:
         g = pd.read_csv(tss_path, sep=None, engine="python")
@@ -37,10 +37,10 @@ def load_pairs(path):
         df.loc[need, "distance_to_tss"] = (df.loc[need, "position"].astype(float) - df.loc[need, "tss_ref"]).abs()
     maf_path = os.environ.get("FU_MAF")
     if maf_path:
-        m = pd.read_csv(maf_path, sep="\t", usecols=["ancestry", "chromosome", "position", "maf"]).rename(columns={"maf": "maf_cohort"})
-        m["position"] = m["position"].astype(int)
-        m = m.drop_duplicates(["ancestry", "chromosome", "position"])
-        df = df.merge(m, on=["ancestry", "chromosome", "position"], how="left")
+        m = pd.read_csv(maf_path, sep="\t", usecols=["ancestry", "plink_variant_id", "maf"]).rename(columns={"maf": "maf_cohort"})
+        m = m.drop_duplicates(["ancestry", "plink_variant_id"])
+        df["plink_variant_id"] = df["chromosome"].astype(str) + ":" + df["position"].astype(str) + "_" + df["ref_allele"] + "_" + df["alt_allele"]
+        df = df.merge(m, on=["ancestry", "plink_variant_id"], how="left")
         df["maf"] = df["maf"].where(df["maf"].notna(), df["maf_cohort"])
     # pipeline convention: log10 of the absolute distance, floored at 1 bp
     df["log_dist"] = np.log10(df["distance_to_tss"].abs().clip(lower=1))
@@ -105,6 +105,20 @@ def matched_auroc(pos, comp, model_col, rng, edges=None, resample_pos_genes=Fals
     if len(set(ys)) < 2:
         return np.nan, 0
     return roc_auc_score(ys, ss, sample_weight=ws if pos_weight_col else None), int(sum(ys))
+
+
+def group_rng(seed, group):
+    """Independent random stream for each group."""
+    return np.random.default_rng([seed, GROUPS.index(group)])
+
+
+def bootstrap_p(d):
+    """Two-sided bootstrap p for a difference: twice the smaller share of replicates on either side of zero,
+    with the plus-one adjustment, so the smallest attainable value is 2 / (B + 1)."""
+    d = np.asarray(d, dtype=float); d = d[np.isfinite(d)]
+    if len(d) == 0:
+        return np.nan
+    return float(min(1.0, 2 * min(((d <= 0).sum() + 1) / (len(d) + 1), ((d >= 0).sum() + 1) / (len(d) + 1))))
 
 
 def ci(x, lo=2.5, hi=97.5):

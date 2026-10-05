@@ -509,6 +509,27 @@ def standardized_mean_difference(case_values, control_values):
     return float((x.mean() - y.mean()) / pooled)
 
 
+def weighted_standardized_mean_difference(case_values, control_values, control_weights):
+    """SMD with controls weighted by their matched-set weight (1 / number of controls matched to the positive), the balance
+    measure for matching with a variable number of controls per positive; equal weights give the unweighted SMD."""
+    x = pd.to_numeric(pd.Series(case_values), errors="coerce").astype(float).values
+    y = pd.to_numeric(pd.Series(control_values), errors="coerce").astype(float).values
+    w = np.asarray(control_weights, dtype=float)
+    x = x[np.isfinite(x)]
+    keep = np.isfinite(y) & np.isfinite(w)
+    y, w = y[keep], w[keep]
+    if len(x) == 0 or len(y) == 0 or w.sum() <= 0:
+        return np.nan
+    vx = x.var(ddof=1) if len(x) > 1 else 0.0
+    my = float(np.sum(w * y) / np.sum(w))
+    denom = np.sum(w) - np.sum(w * w) / np.sum(w)
+    vy = float(np.sum(w * (y - my) ** 2) / denom) if denom > 0 else 0.0
+    pooled = math.sqrt((vx + vy) / 2.0)
+    if pooled == 0:
+        return 0.0
+    return float((x.mean() - my) / pooled)
+
+
 def summarize_values(prefix, values):
     s = pd.to_numeric(pd.Series(values), errors="coerce").dropna().astype(float)
     if len(s) == 0:
@@ -533,6 +554,10 @@ def _build_match_cache(controls):
     by_gene_stratum = defaultdict(list)
     log_distance = pd.to_numeric(controls["log_distance"], errors="coerce").astype(float).values
     maf = pd.to_numeric(controls["maf"], errors="coerce").astype(float).values
+    # rank of each control's unit id, the secondary sort key that makes tied candidates deterministic
+    unit_ids = controls["unit_id"].astype(str).values
+    unit_rank = np.empty(len(unit_ids), dtype=np.int64)
+    unit_rank[np.argsort(unit_ids, kind="stable")] = np.arange(len(unit_ids))
     for idx, row in controls.iterrows():
         stratum = (row["tss_distance_bin_recomputed"], row["maf_bin"])
         by_stratum[stratum].append(idx)
@@ -544,6 +569,7 @@ def _build_match_cache(controls):
         "by_gene_stratum": by_gene_stratum,
         "log_distance": log_distance,
         "maf": maf,
+        "unit_rank": unit_rank,
     }
 
 
@@ -558,7 +584,7 @@ def _sorted_by_score(indices, cache, positive_row):
     kept_indices = indices[keep]
     score = (log_diff[keep] / 0.20) + (maf_diff[keep] / 0.02)
     score = np.where(np.isfinite(score), score, 99.0)
-    return kept_indices[np.argsort(score)]
+    return kept_indices[np.lexsort((cache["unit_rank"][kept_indices], score))]
 
 
 def _precompute_candidate_lists(positive, cache):
@@ -631,6 +657,7 @@ def _match_once_precomputed(positive, controls, candidate_infos, model, ancestry
     used_flags = np.zeros(len(controls), dtype=bool)
     records = []
     selected_control_indices = []
+    selected_control_weights = []
     selected_control_units = []
     selected_control_coords = []
     matched_positive_indices = []
@@ -665,6 +692,7 @@ def _match_once_precomputed(positive, controls, candidate_infos, model, ancestry
             continue
 
         matched_positive_indices.append(pos_idx)
+        selected_control_weights.extend([1.0 / len(selected)] * len(selected))
         match_group_id = "%s|%s|%s|pip%s|%s|iter%03d|m%05d" % (
             unit_type,
             model,
@@ -737,8 +765,12 @@ def _match_once_precomputed(positive, controls, candidate_infos, model, ancestry
         "positive_with_any_same_gene_control_fraction": float(positives_with_same_gene / len(matched_pos)) if len(matched_pos) else np.nan,
         "smd_maf_before": standardized_mean_difference(positive["maf"], controls["maf"]),
         "smd_log_distance_before": standardized_mean_difference(positive["log_distance"], controls["log_distance"]),
-        "smd_maf_after": standardized_mean_difference(matched_pos["maf"], selected_ctrl["maf"]),
-        "smd_log_distance_after": standardized_mean_difference(matched_pos["log_distance"], selected_ctrl["log_distance"]),
+        "smd_maf_after": weighted_standardized_mean_difference(matched_pos["maf"], selected_ctrl["maf"], selected_control_weights),
+        "smd_log_distance_after": weighted_standardized_mean_difference(
+            matched_pos["log_distance"], selected_ctrl["log_distance"], selected_control_weights
+        ),
+        "smd_maf_after_unweighted": standardized_mean_difference(matched_pos["maf"], selected_ctrl["maf"]),
+        "smd_log_distance_after_unweighted": standardized_mean_difference(matched_pos["log_distance"], selected_ctrl["log_distance"]),
     }
     balance.update(summarize_values("positive_maf_before", positive["maf"]))
     balance.update(summarize_values("control_maf_before", controls["maf"]))
@@ -903,7 +935,14 @@ def mh_log_or_from_groups(df, category):
         var_sum += var_a
         if col1 > 0 and col0 > 0:
             informative += 1
-    log_or = math.log((numerator + 0.5) / (denominator + 0.5))
+    if numerator > 0 and denominator > 0:
+        log_or = math.log(numerator / denominator)
+    elif numerator > 0:
+        log_or = np.inf
+    elif denominator > 0:
+        log_or = -np.inf
+    else:
+        log_or = np.nan
     if var_sum > 0:
         cmh_stat = (obs_minus_exp * obs_minus_exp) / var_sum
         p_value = float(chi2.sf(cmh_stat, 1))

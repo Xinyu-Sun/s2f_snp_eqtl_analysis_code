@@ -42,7 +42,8 @@ def main() -> None:
     data["pip_threshold"] = pd.to_numeric(data["pip_threshold"])
 
     plt.rcParams.update({
-        "font.family": "sans-serif",
+        "font.family": "Arial",
+        "pdf.fonttype": 42,
         "font.size": 10,
         "axes.titlesize": 11,
         "axes.labelsize": 10,
@@ -104,7 +105,7 @@ def main() -> None:
     ]
     fig.legend(handles=handles, loc="upper center", ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.99))
     for suffix in ("pdf", "png"):
-        path = OUT / f"figureS1_maf_stratified_auroc_boxplot.{suffix}"
+        path = OUT / f"figureS2_maf_stratified_auroc_boxplot.{suffix}"
         fig.savefig(path, bbox_inches="tight", dpi=250)
         print(f"[OK] Saved {path}")
     plt.close(fig)

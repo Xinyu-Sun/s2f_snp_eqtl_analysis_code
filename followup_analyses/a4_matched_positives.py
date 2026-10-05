@@ -6,8 +6,11 @@ import sys, numpy as np, pandas as pd
 from fu_common import load_pairs, split_classes, matched_auroc, distance_bins, GROUPS, MODELS, ci
 pairs_path, maf_path, out_dir = sys.argv[1], sys.argv[2], sys.argv[3]
 df = load_pairs(pairs_path)
-df["maf_use"] = df["maf"]  # filled for all groups by fu_common when FU_MAF is set
-df["maf_bin"] = pd.cut(df["maf_use"], [0, 0.05, 0.2, 0.5], labels=["lt0.05", "0.05-0.2", "ge0.2"], include_lowest=True)
+# MAF of the pair, or the exact-cohort PLINK MAF from maf_path where the pair has none
+m = pd.read_csv(maf_path, sep="\t", usecols=["ancestry", "plink_variant_id", "maf"]).drop_duplicates(["ancestry", "plink_variant_id"])
+key = df["ancestry"] + "|" + df["chromosome"].astype(str) + ":" + df["position"].astype(str) + "_" + df["ref_allele"] + "_" + df["alt_allele"]
+df["maf_use"] = df["maf"].where(df["maf"].notna(), key.map(dict(zip(m["ancestry"] + "|" + m["plink_variant_id"], m["maf"]))))
+df["maf_bin"] = pd.cut(df["maf_use"], [0, 0.05, 0.2, 0.5 + 1e-9], labels=["lt0.05", "0.05-0.2", "ge0.2"], right=False)  # MAF < 0.05, 0.05-0.2, >= 0.2
 rows, pairs_out = [], []
 for model, col in MODELS.items():
     t = 0.9

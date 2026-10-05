@@ -1,5 +1,6 @@
 """B5. Group contrasts in model-first enrichment over background (lift), from the released yield table.
-Top 1% of clumped lead pairs, r2 0.2 clumping, global ranking, general gene panel. Groups are independent samples, so the
+Top 1% of clumped lead pairs, r2 0.2 clumping, global ranking, general gene panel. Exact association: the lead pair has
+p < 2.02e-5 (index_stringent_association); direction-concordant association additionally has concordant signs. Groups are independent samples, so the
 standard error of a difference is sqrt(se_a^2 + se_b^2) using the gene-bootstrap standard errors stored in the table.
 Usage: python3 b5_model_first_lift_contrasts.py native_ld_yields.tsv out.tsv   (standard library only)"""
 import csv, math, sys
@@ -8,7 +9,7 @@ r = list(csv.DictReader(open(src), delimiter="\t"))
 def f(x):
     try: return float(x)
     except ValueError: return float("nan")
-names = {"index_paper_exact_association": "exact association", "index_directionally_supported": "direction-concordant association"}
+names = {"index_stringent_association": "exact association", "index_directionally_supported": "direction-concordant association"}
 out = []
 for dep in ("native", "three_way_shared"):
     for ep in names:

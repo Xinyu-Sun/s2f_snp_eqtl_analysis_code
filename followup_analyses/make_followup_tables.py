@@ -18,7 +18,10 @@ def f4(x): return "nan" if pd.isna(x) else f"{x:.4f}"
 def ci3(m, lo, hi): return f"{m:.3f} ({lo:.3f}--{hi:.3f})"
 def fp(p): return "nan" if pd.isna(p) else f"{p:.2g}"
 def pct(x): return f"{100*x:.0f}\\%"
-def bp(p): return "nan" if pd.isna(p) else ("$< 0.001$" if p < 0.0005 else f"{p:.3f}")  # a bootstrap p that would print as 0.000 prints as < 0.001
+def bp(p, n):
+    """Bootstrap p (with the plus-one adjustment); at its floor 2 / (n + 1) it prints as < 2 / n."""
+    if pd.isna(p): return "nan"
+    return f"$< {2 / n:g}$" if p <= 2 / (n + 1) + 1e-12 else f"{p:.3f}"
 
 def existing(name):
     p = T / name
@@ -81,7 +84,7 @@ for m, mn in MODELS:
     for t in (0.9, 0.5):
         for c in ("low_pip", "intermediate_pip"):
             for _, r in gd[(gd.model == m) & (gd.pip_threshold == t) & (gd.comparison == c)].iterrows():
-                rows.append(f"{PIP[t]} & {mn} & {COMP[c]} & {CON[r.contrast]} & {r.diff_mean:.3f} & {r.ci_low:.3f} to {r.ci_high:.3f} & {bp(r.bootstrap_two_sided_p)} \\\\")
+                rows.append(f"{PIP[t]} & {mn} & {COMP[c]} & {CON[r.contrast]} & {r.diff_mean:.3f} & {r.ci_low:.3f} to {r.ci_high:.3f} & {bp(r.bootstrap_two_sided_p, r.n_replicates)} \\\\")
 rows += ["\\midrule", "\\multicolumn{7}{@{}l}{\\textbf{Cross-pool evaluation (PIP $\\geq 0.9$ positives; AUROC, 95\\% CI)}} \\\\",
          "\\textbf{Model} & \\textbf{Comparison} & \\textbf{Positives from} & \\textbf{vs AA pool} & \\textbf{vs CH pool} & \\textbf{vs NHW pool} & \\\\", "\\midrule"]
 for m, mn in MODELS:
@@ -218,7 +221,7 @@ write("review_logistic_slopes.tex", ["\\textbf{PIP} & \\textbf{Model} & \\textbf
 
 # ---------- NEW: baselines (b4) ----------
 b4 = rd("b4_baseline_auroc.tsv"); b4d = rd("b4_baseline_group_differences.tsv"); rows = []
-PL = [("score", "Model score"), ("accessible_only", "Accessible-chromatin overlap alone"), ("tss_proximity_only", "Proximity to the TSS alone"), ("annotation_model", "Accessibility + distance model"), ("annotation_plus_score", "Accessibility + distance model + score"), ("gain_from_score", "Gain from adding the score")]
+PL = [("score", "Model score"), ("accessible_only", "Accessible-chromatin overlap alone"), ("tss_proximity_only", "Proximity to the TSS alone"), ("annotation_plus_score", "Accessibility + score"), ("gain_from_score", "Gain from adding the score to accessibility")]
 for m, mn in MODELS:
     for k, kl in PL:
         cells = []
@@ -233,11 +236,11 @@ for m, mn in MODELS:
         if k == "tss_proximity_only": continue
         cells = []
         for c in ("AA_minus_NHW", "AA_minus_CH", "CH_minus_NHW"):
-            r = b4d[(b4d.model == m) & (b4d.predictor == k) & (b4d.contrast == c)].iloc[0]; cells.append(f"{r.diff_mean:.3f} ({r.ci_low:.3f} to {r.ci_high:.3f}; {bp(r.bootstrap_two_sided_p)})")
+            r = b4d[(b4d.model == m) & (b4d.predictor == k) & (b4d.contrast == c)].iloc[0]; cells.append(f"{r.diff_mean:.3f} ({r.ci_low:.3f} to {r.ci_high:.3f}; {bp(r.bootstrap_two_sided_p, r.n_replicates)})")
         rows.append(f"{mn} & {kl} & " + " & ".join(cells) + " \\\\")
 n_note = b4[b4.predictor == "score"][["group", "n_pos_with_annotation", "n_comp_with_annotation"]].drop_duplicates("group")
 write("review_annotation_baselines.tex", ["\\textbf{Model} & \\textbf{Predictor} & \\textbf{AA} & \\textbf{CH} & \\textbf{NHW} \\\\"], rows,
-      "Distance-matched AUROC of annotation-only predictors compared with the model score, PIP $\\geq 0.9$ against low-PIP comparison variants, restricted to variants with a FILER annotation call. The accessibility + distance model is a logistic regression with predictions from five-fold cross-validation that keeps all variants of a gene in one fold. Intervals and group differences come from 500 joint resamples of positive genes and comparison variants, shared across predictors.",
+      "Distance-matched AUROC of annotation-only predictors compared with the model score, PIP $\\geq 0.9$ against low-PIP comparison variants, restricted to variants with a FILER annotation call. Accessibility + score is a logistic regression of high-PIP status on accessible-chromatin overlap and standardized log score magnitude with predictions from five-fold cross-validation that keeps all variants of a gene in one fold; the gain is its AUROC minus that of accessibility alone. Intervals and group differences come from 500 joint resamples of positive genes and comparison variants, shared across predictors.",
       "stab:annotation_baselines", "@{}llrrr@{}", extra="\\setlength{\\tabcolsep}{3pt}\n")
 
 # ---------- NEW: within gene (b2), random subsets and PIP weighting (b7) ----------
@@ -255,7 +258,7 @@ for m, mn in MODELS:
         cells = []
         for c in ("AA_minus_NHW", "AA_minus_CH", "CH_minus_NHW"):
             x = b2d[(b2d.model == m) & (b2d.version == v) & (b2d.contrast == c)]
-            cells.append("--" if x.empty else f"{x.iloc[0].diff_mean:.3f} ({x.iloc[0].ci_low:.3f} to {x.iloc[0].ci_high:.3f}; {bp(x.iloc[0].bootstrap_two_sided_p)})")
+            cells.append("--" if x.empty else f"{x.iloc[0].diff_mean:.3f} ({x.iloc[0].ci_low:.3f} to {x.iloc[0].ci_high:.3f}; {bp(x.iloc[0].bootstrap_two_sided_p, x.iloc[0].n_replicates)})")
         rows.append(f"{mn} & {vl} & AA $-$ NHW: {cells[0]} & \\multicolumn{{2}}{{l}}{{AA $-$ CH: {cells[1]}}} & \\multicolumn{{2}}{{l}}{{CH $-$ NHW: {cells[2]}}} \\\\")
 write("review_within_gene.tex", ["\\textbf{Model} & \\textbf{Comparison variants} & \\textbf{Group} & \\textbf{High-PIP variants evaluated} & \\textbf{Median same-gene comparison variants} & \\textbf{Mean percentile (95\\% CI)} & \\textbf{Above all same-gene variants} \\\\"], rows,
       "Within-gene evaluation. For each high-PIP variant (PIP $\\geq 0.9$) the percentile of its score magnitude among low-PIP comparison variants of the same gene (at least five, or at least three when the TSS-distance bin is also matched); ties count one half. Intervals are from 2,000 bootstrap resamples of positive genes.",
@@ -274,7 +277,7 @@ for m, mn in MODELS:
         for g in GROUPS:
             r = b7w[(b7w.model == m) & (b7w.comparison == c) & (b7w.group == g)].iloc[0]
             d = b7d[(b7d.model == m) & (b7d.comparison == c) & (b7d.contrast == f"AA_minus_{g}")]
-            dd = "--" if d.empty else f"{d.iloc[0].diff_mean:.3f} ({d.iloc[0].ci_low:.3f} to {d.iloc[0].ci_high:.3f}; {bp(d.iloc[0].bootstrap_two_sided_p)})"
+            dd = "--" if d.empty else f"{d.iloc[0].diff_mean:.3f} ({d.iloc[0].ci_low:.3f} to {d.iloc[0].ci_high:.3f}; {bp(d.iloc[0].bootstrap_two_sided_p, d.iloc[0].n_replicates)})"
             rows.append(f"{mn} & {COMP[c]} & {g} & {int(r.n_pos)} & {r.median_pip:.3f} & {r.auroc_unweighted:.3f} & {ci3(r.auroc_pip_weighted, r.weighted_ci_low, r.weighted_ci_high)} & {dd} \\\\")
 write("review_subsets_pip_weighting.tex", ["\\textbf{Model} & \\textbf{Comparison} & \\textbf{Group} & \\textbf{High-PIP variants} & \\textbf{Subset size} & \\textbf{AA AUROC} & \\textbf{Subset AUROC, mean (95\\% range)} & \\textbf{Subsets at or above AA} \\\\"], rows,
       "Random subsets of the Caribbean Hispanic and Non-Hispanic White high-PIP sets of the African American set size (1,000 draws without replacement, each evaluated by distance-matched AUROC against the group's own comparison pool), and PIP-weighted AUROC.",
@@ -298,4 +301,46 @@ for m, mn in MODELS:
 write("review_label_transfer.tex", ["\\textbf{High-PIP from} & \\textbf{Status in} & \\textbf{$n$} & \\textbf{PIP $\\geq$ 0.9} & \\textbf{0.5--0.9} & \\textbf{0.01--0.5} & \\textbf{$<$ 0.01} & \\textbf{Variant not tested} & \\textbf{eGene, no credible set} & \\textbf{Not an eGene} & \\textbf{In a credible set} \\\\"], rows,
       "Status of each group's high-PIP variants (PIP $\\geq 0.9$, in a credible set) in the fine-mapping of the other two groups, and distance-matched AUROC by sharing. ``Variant not tested'' means the gene has a credible set in the other group but the variant did not pass its allele-count filter.",
       "stab:label_transfer", "@{}lllrrrrrrrr@{}", extra="\\setlength{\\tabcolsep}{3pt}\n")
+
+# ---------- shared and group-specific high-PIP variants after matching (b8) ----------
+m8 = rd("b8_matched_auroc.tsv"); p8 = rd("b8_pooled.tsv"); r8 = rd("b8_regression.tsv"); rows = []
+DEFA = "A_shared_vs_not_shared"
+DIR = {"specific_to_shared": "Group-specific $\\rightarrow$ shared", "shared_to_specific": "Shared $\\rightarrow$ group-specific"}
+def dci(m, lo, hi): return f"{m:+.3f} ({lo:+.3f} to {hi:+.3f})"
+for m, mn in MODELS:
+    for g in GROUPS:
+        for d, dl in DIR.items():
+            r = m8[(m8.model == m) & (m8.group == g) & (m8.definition == DEFA) & (m8.direction == d)].iloc[0]
+            rows.append(f"{mn} & {g} & {dl} & {int(r.n_matched_pairs)} & {ci3(r.auroc_shared, r.shared_ci_low, r.shared_ci_high)} & {ci3(r.auroc_comparator, r.comparator_ci_low, r.comparator_ci_high)} & {dci(r.diff_mean, r.diff_ci_low, r.diff_ci_high)} & {bp(r.diff_bootstrap_p, 1000)} \\\\")
+    for d, dl in DIR.items():
+        r = p8[(p8.analysis == "matched_auroc_difference") & (p8.model == m) & (p8.definition == DEFA) & (p8.direction == d)].iloc[0]
+        gd = "; ".join(f"{k} {float(v):+.3f}" for k, v in (x.split("=") for x in r.group_diffs.split(";")))
+        rows.append(f"{mn} & Pooled & {dl} & {int(r.n_matched_pairs_total)} & \\multicolumn{{2}}{{l}}{{{gd}; heterogeneity $p$ = {r.heterogeneity_p:.2f}}} & {dci(r.pooled_diff_cross_group_clusters, r.cross_ci_low, r.cross_ci_high)} & {bp(r.cross_p, 1000)} \\\\")
+    if m == "borzoi": rows.append("\\midrule")
+rows += ["\\midrule", "\\multicolumn{8}{@{}l}{\\textbf{Fold difference in $|$score$|$, shared versus group-specific, among all high-PIP variants (gene-clustered regression)}} \\\\",
+         "\\textbf{Model} & \\textbf{Group} & \\textbf{$n$ (shared)} & \\textbf{Adjusted fold (95\\% CI)} & \\textbf{$p$} & \\textbf{With accessible chromatin, fold (95\\% CI)} & \\textbf{$p$} & \\\\", "\\midrule"]
+def fci(r): return f"{r.fold:.2f} ({r.fold_ci_low:.2f}--{r.fold_ci_high:.2f})"
+for m, mn in MODELS:
+    for g in GROUPS:
+        a = r8[(r8.model == m) & (r8.group == g) & (r8.definition == DEFA) & (r8.formula == "covariates")].iloc[0]
+        b = r8[(r8.model == m) & (r8.group == g) & (r8.definition == DEFA) & (r8.formula == "covariates_plus_accessible")].iloc[0]
+        rows.append(f"{mn} & {g} & {int(a.n)} ({int(a.n_shared)}) & {fci(a)} & {fp(a.p)} & {fci(b)} & {fp(b.p)} & \\\\")
+    a = p8[(p8.analysis == "regression_covariates") & (p8.model == m) & (p8.definition == DEFA)].iloc[0]
+    b = p8[(p8.analysis == "regression_covariates_plus_accessible") & (p8.model == m) & (p8.definition == DEFA)].iloc[0]
+    rows.append(f"{mn} & Pooled & {int(a.n)} & {a.pooled_fold:.2f} ({a.fold_ci_low:.2f}--{a.fold_ci_high:.2f}) & {fp(a.pooled_p)} & {b.pooled_fold:.2f} ({b.fold_ci_low:.2f}--{b.fold_ci_high:.2f}) & {fp(b.pooled_p)} & shared $\\times$ group $p$ = {a.interaction_wald_p:.2f}, {b.interaction_wald_p:.2f} \\\\")
+    if m == "borzoi": rows.append("\\midrule")
+write("review_shared_matched.tex", ["\\textbf{Model} & \\textbf{Group} & \\textbf{Matching} & \\textbf{Pairs} & \\textbf{AUROC, shared (95\\% CI)} & \\textbf{AUROC, group-specific (95\\% CI)} & \\textbf{Difference (95\\% CI)} & \\textbf{$p$} \\\\"], rows,
+      "Separation of shared and group-specific high-PIP variants after one-to-one matching. Shared = also high-PIP (PIP $\\geq 0.9$) in at least one other group; group-specific = the group's other high-PIP variants. Within each group, group-specific positives were matched without replacement to shared positives (and shared to group-specific) with the same TSS-distance bin and MAF bin and the closest $|z|$ (caliper 1.5), and the distance-matched AUROC of the two matched subsets against the group's low-PIP comparison variants was computed with a joint bootstrap of 1,000 replicates that resampled matched pairs and redrew comparison variants (means, 95\\% percentile intervals, two-sided bootstrap $p$ with the plus-one adjustment). Pooled rows weight the group differences by matched pairs, with heterogeneity from Cochran's $Q$ on the bootstrap variances and a bootstrap over gene clusters that span groups. The regression rows give the fold difference in $|$score$|$ of shared versus group-specific positives among all high-PIP positives of the group, from least-squares regression of $\\log_{10}(|$score$| + 10^{-6})$ on the shared indicator with TSS-distance bin, log distance, MAF, and $|z|$ (adjusted) and additionally accessible-chromatin overlap, with gene-clustered standard errors; the pooled regression has group-specific intercepts and covariate slopes, and the interaction $p$ tests whether the fold differs between groups.",
+      "stab:shared_matched", "@{}lllrllll@{}", extra="\\setlength{\\tabcolsep}{3pt}\n")
+
+# ---------- model-first lift contrasts (b5) ----------
+b5 = rd("b5_model_first_lift_contrasts.tsv"); b5 = b5[b5.panel == "native"]; rows = []
+SUP = {"exact association": "Exact", "direction-concordant association": "Directional"}
+for ep, epl in SUP.items():
+    for m, mn in MODELS:
+        for c in ("AA_minus_NHW", "AA_minus_CH", "CH_minus_NHW"):
+            r = b5[(b5.endpoint == ep) & (b5.model == m) & (b5.contrast == c)].iloc[0]
+            rows.append(f"{epl} & {mn} & {CON[c]} & {r.lift_a:.1f}, {r.lift_b:.1f} & {r.difference:.1f} & {r.ci_low:.1f} to {r.ci_high:.1f} & {r.lift_ratio:.2f} & {r.p:.2f} \\\\")
+write("model_first_lift_contrasts.tex", ["\\textbf{Support} & \\textbf{Model} & \\textbf{Contrast} & \\textbf{Lift (first, second)} & \\textbf{Difference} & \\textbf{95\\% CI} & \\textbf{Ratio} & $p$ \\\\"], rows,
+      "Group contrasts in model-first enrichment over background.", "stab:model_first_lift", "llllrrrr")
 print("done")

@@ -33,7 +33,7 @@ def main() -> None:
     if data.empty:
         raise RuntimeError("Native global ECDF data are empty")
     plt.rcParams.update({
-        "font.family": "DejaVu Sans", "font.size": 9,
+        "font.family": "Arial", "pdf.fonttype": 42, "font.size": 9,
         "axes.spines.top": False, "axes.spines.right": False,
     })
     figure, axes = plt.subplots(2, 3, figsize=(13, 7.2), sharex=True, constrained_layout=True)
@@ -57,7 +57,7 @@ def main() -> None:
             axis.set_xticks(np.arange(0, 9, 1))
             axis.tick_params(axis="x", which="both", labelbottom=True)
             axis.set_title(f"{ancestry} — {'two-sided regular-eQTL p' if evidence_type == 'association' else 'one-sided directional p'}")
-            axis.set_xlabel("Evidence threshold, −log₁₀(p)")
+            axis.set_xlabel(r"Evidence threshold, −log$_{\mathdefault{10}}$(p)")
             axis.set_ylabel("Weighted fraction at or below p" if column_index == 0 else "")
             axis.grid(alpha=0.2)
             if row_index == 0 and column_index == 0:
@@ -66,7 +66,6 @@ def main() -> None:
                 axis.text(-0.16, 1.08, "B", transform=axis.transAxes, fontsize=13, fontweight="bold")
     handles, labels = axes[0, 2].get_legend_handles_labels()
     figure.legend(handles, labels, ncol=3, loc="upper center", bbox_to_anchor=(0.5, 1.03), frameon=False)
-    figure.suptitle("Top-1% lead pairs versus background eQTL evidence after ancestry-specific LD clumping", fontsize=13, fontweight="bold", y=1.08)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(args.output, dpi=300, bbox_inches="tight")
     figure.savefig(args.output.with_suffix(".pdf"), bbox_inches="tight")

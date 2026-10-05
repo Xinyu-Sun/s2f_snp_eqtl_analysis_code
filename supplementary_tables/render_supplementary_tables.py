@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Render supplementary-table source TSVs and LaTeX tables from the analysis outputs.
 
-Writes tableS01, S08, S09, S10, S19, S20, S21, S22, S25 and S26 (current Supplementary Table numbering)
-to --data-dir and the corresponding LaTeX tables to --tex-dir."""
+Writes the sources of Tables S1, S8, S9, S10, S18, S19, S20, S23 and S24 (tableSNN_*.tsv, Supplementary Table
+numbering of the manuscript) to --data-dir and the corresponding LaTeX tables to --tex-dir."""
 
 from __future__ import annotations
 
@@ -138,12 +138,13 @@ def table_s4_s6(composition_dir: Path, tex_dir: Path, data_dir: Path) -> None:
     samples = read(composition_dir / "filer_positive_variant_sample_sizes.tsv")
     composition = read(composition_dir / "filer_annotation_overlap_key.tsv")
     pairwise = read(composition_dir / "filer_pairwise_comparisons_key.tsv")
-    for name, frame in [
-        ("tableS20_functional_annotation_sample_sizes.tsv", samples),
-        ("tableS21_functional_annotation_overlap.tsv", composition),
-        ("tableS22_functional_annotation_pairwise.tsv", pairwise),
-    ]:
-        frame.to_csv(data_dir / name, sep="\t", index=False)
+    samples.to_csv(data_dir / "tableS19_functional_annotation_sample_sizes.tsv", sep="\t", index=False)
+    # Table S20 has two parts: (A) overlap by group and (B) pairwise group comparisons
+    pd.concat(
+        [composition.assign(table_part="A_overlap"), pairwise.assign(table_part="B_pairwise")],
+        ignore_index=True,
+        sort=False,
+    ).to_csv(data_dir / "tableS20_functional_annotation_overlap.tsv", sep="\t", index=False)
 
     samples["_model"] = samples["model"].map({"alphagenome": 0, "borzoi": 1})
     samples = samples.sort_values(["_model", "pip_threshold"])
@@ -210,7 +211,7 @@ def table_s7_s8(model_first: Path, tex_dir: Path, data_dir: Path) -> None:
         & top["clump_threshold_r2"].eq(0.2) & top["rank_view"].eq("global")
         & top["cutoff_percent"].eq(1.0)
     ].copy()
-    adjusted.to_csv(data_dir / "tableS25_native_ld_adjusted.tsv", sep="\t", index=False)
+    adjusted.to_csv(data_dir / "tableS23_native_ld_adjusted.tsv", sep="\t", index=False)
     rows = []
     for ancestry in ANCESTRIES:
         for method in ["borzoi", "alphagenome", "consensus"]:
@@ -241,7 +242,7 @@ def table_s7_s8(model_first: Path, tex_dir: Path, data_dir: Path) -> None:
         & regional["cutoff_percent"].eq(1.0)
     ].copy()
     summary = regional.groupby("regional_statistic")["auc_probability_top_has_smaller_p"].agg(["min", "max"]).reset_index()
-    summary.to_csv(data_dir / "tableS26_native_ld_regional_summaries.tsv", sep="\t", index=False)
+    summary.to_csv(data_dir / "tableS24_native_ld_regional_summaries.tsv", sep="\t", index=False)
     definitions = {
         "minimum_p": ("Minimum regional $p$", "Smallest two-sided regular-eQTL $p$ value among close proxies for the same gene", "Sensitive summary of whether any close proxy carries strong same-gene association evidence; affected by proxy count"),
         "simes_p": ("Simes $p$", "Ordered $p$-value combination across close proxies for the same gene", "Checks whether regional evidence persists beyond selecting the single smallest proxy $p$ value"),
@@ -314,7 +315,7 @@ def table_s10(filer_root: Path, tex_dir: Path, data_dir: Path) -> None:
                     row[f"{contrast}_{field}"] = current[field]
             rows.append(row)
     frame = pd.DataFrame(rows)
-    frame.to_csv(data_dir / "tableS19_filer_matched_accessible.tsv", sep="\t", index=False)
+    frame.to_csv(data_dir / "tableS18_filer_matched_accessible.tsv", sep="\t", index=False)
     lines = [
         "\\begin{table}[p]", "\\centering", "\\scriptsize", "\\setlength{\\tabcolsep}{3pt}",
         "\\caption{\\textbf{Matched accessible-chromatin enrichment and group interactions.} Pair-level Mantel--Haenszel odds ratios compare variants above the indicated PIP threshold with group-, model-, TSS-distance-, and PLINK-MAF-matched PIP $<0.01$ comparison variants. Values in the group columns are enrichment odds ratios with 95\\% bootstrap confidence intervals. Interaction values are ratios of group-specific enrichment odds ratios with 95\\% bootstrap confidence intervals; $q$ values are Benjamini--Hochberg adjusted within each unit, model, threshold, and background family across 15 categories and three group contrasts. Interaction ratios above one indicate numerically stronger enrichment in AA.}",

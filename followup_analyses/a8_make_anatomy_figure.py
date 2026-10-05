@@ -1,5 +1,5 @@
-"""Figure 4 (four panels), styled like Figures 1-3: model colors Borzoi #E64B35 / AlphaGenome #4DBBD5,
-RdYlGn heatmap with annotated cells (red low, green high), bold (a)-(d) labels with italic descriptors,
+"""Figure 3 (four panels), styled like Figures 1 and 2: model colors Borzoi #E64B35 / AlphaGenome #4DBBD5,
+viridis heatmap with annotated cells (dark low, bright high), bold (A)-(D) labels with italic descriptors,
 12-pt sans text on a 16 x 11 inch canvas.
 (a) |S2F score| for low-PIP comparison variants (hatched) and high-PIP variants (PIP >= 0.9) by group.
 (b) Distance-matched AUROC with comparison-only (open) and joint (filled) resampling intervals.
@@ -17,7 +17,7 @@ from fu_common import load_pairs, split_classes, GROUPS, MODELS
 pairs_path, res, out_pdf = sys.argv[1], sys.argv[2], sys.argv[3]
 MODEL_COLORS = {"borzoi": "#E64B35", "alphagenome": "#4DBBD5"}
 TOOL_LABELS = {"borzoi": "Borzoi", "alphagenome": "AlphaGenome"}
-plt.rcParams.update({"font.family": "sans-serif", "font.size": 12, "axes.labelsize": 12, "xtick.labelsize": 11, "ytick.labelsize": 11, "legend.fontsize": 11, "pdf.fonttype": 42})
+plt.rcParams.update({"font.family": "Arial", "font.size": 12, "axes.labelsize": 12, "xtick.labelsize": 11, "ytick.labelsize": 11, "legend.fontsize": 11, "pdf.fonttype": 42})
 df = load_pairs(pairs_path)
 bt = pd.read_csv(f"{res}/a2_auroc_bootstrap.tsv", sep="\t"); bt = bt[(bt.pip_threshold == 0.9) & (bt.comparison == "low_pip")]
 cp = pd.read_csv(f"{res}/a2_cross_pool_auroc.tsv", sep="\t"); cp = cp[(cp.pip_threshold == 0.9) & (cp.comparison == "low_pip")]
@@ -62,7 +62,7 @@ for b, (model, col) in enumerate(MODELS.items()):
             bp["boxes"][0].set(facecolor=MODEL_COLORS[model], alpha=alpha, hatch=hatch)
 block_axes(ax_a, GROUPS)
 ax_a.set_yscale("log"); ax_a.set_ylim(3e-7, 30.0); ax_a.set_ylabel("|S2F score|")
-despine(ax_a); panel_label(ax_a, "(a)", "score magnitude of high-PIP and comparison variants")
+despine(ax_a); panel_label(ax_a, "(A)", "score magnitude of high-PIP and comparison variants")
 ax_a.legend(handles=[Patch(facecolor="white", edgecolor="#555555", hatch="////", label="Low-PIP comparison (PIP < 0.01)"), Patch(facecolor="#bbbbbb", edgecolor="#555555", label="High-PIP (PIP ≥ 0.9)")], loc="upper left", frameon=False, fontsize=11)
 
 # (b) AUROC: comparison-only (open) vs joint (filled)
@@ -73,25 +73,25 @@ for b, model in enumerate(MODELS):
         ax_b.errorbar(x - 0.16, r.auroc_comp_only_mean, yerr=[[r.auroc_comp_only_mean - r.comp_only_ci_low], [r.comp_only_ci_high - r.auroc_comp_only_mean]], fmt="s", ms=7, mfc="white", mec=c, color=c, capsize=4, lw=1.3, zorder=3)
         ax_b.errorbar(x + 0.16, r.auroc_joint_mean, yerr=[[r.auroc_joint_mean - r.joint_ci_low], [r.joint_ci_high - r.auroc_joint_mean]], fmt="o", ms=7, mfc=c, mec="#555555", mew=0.8, color=c, capsize=4, lw=1.3, zorder=3)
 ax_b.axhline(0.5, color="red", ls="--", lw=1, alpha=0.6); ax_b.set_ylim(0.45, 1.04); ax_b.set_ylabel("AUROC (PIP ≥ 0.9 vs. low-PIP)")
-despine(ax_b); panel_label(ax_b, "(b)", "AUROC with comparison-only or joint resampling")
+despine(ax_b); panel_label(ax_b, "(B)", "AUROC with comparison-only or joint resampling")
 ax_b.legend(handles=[Line2D([], [], marker="s", mfc="white", mec="#555555", color="#555555", ls="", ms=7, label="Comparison variants resampled"), Line2D([], [], marker="o", mfc="#bbbbbb", mec="#555555", color="#555555", ls="", ms=7, label="Positive genes and comparison variants resampled")], loc="upper left", frameon=False, fontsize=11)
 
-# (c) cross-pool heatmaps, RdYlGn as in Figures 1-2
-norm = mcolors.Normalize(vmin=0.65, vmax=0.90); cmap = plt.get_cmap("RdYlGn")
+# (c) cross-pool heatmaps, viridis as in Figure S1
+norm = mcolors.Normalize(vmin=0.65, vmax=0.90); cmap = plt.get_cmap("viridis")
 for k, model in enumerate(MODELS):
     ax = ax_c[k]
     m = cp[cp.model == model].pivot(index="positives_from", columns="comparison_pool_from", values="auroc_mean").loc[GROUPS, GROUPS].values
     ax.pcolormesh(np.arange(4), np.arange(4), m, cmap=cmap, norm=norm, edgecolors="white", linewidth=2)
     for i in range(3):
         for j in range(3):
-            ax.text(j + 0.5, i + 0.5, f"{m[i, j]:.3f}", ha="center", va="center", fontsize=11)
+            ax.text(j + 0.5, i + 0.5, f"{m[i, j]:.3f}", ha="center", va="center", fontsize=11, color="white" if norm(m[i, j]) < 0.7 else "black")
     ax.set_xticks(np.arange(3) + 0.5); ax.set_xticklabels(GROUPS); ax.set_yticks(np.arange(3) + 0.5); ax.set_yticklabels(GROUPS if k == 0 else [])
     ax.invert_yaxis(); ax.set_title(TOOL_LABELS[model], fontsize=12, pad=4); ax.set_xlabel("Comparison pool from")
     for sp in ax.spines.values(): sp.set_visible(False)
     ax.tick_params(length=0)
 ax_c[0].set_ylabel("High-PIP variants from")
 cb = fig.colorbar(cm.ScalarMappable(cmap=cmap, norm=norm), cax=cax); cb.set_label("AUROC"); cb.outline.set_visible(False)
-panel_label(ax_c[0], "(c)", "high-PIP variants vs. each group's comparison pool")
+panel_label(ax_c[0], "(C)", "high-PIP variants vs. each group's comparison pool")
 
 # (d) top-vs-bottom decile enrichment
 centres = block_axes(ax_d, GROUPS)
@@ -102,7 +102,7 @@ for b, model in enumerate(MODELS):
         ax_d.errorbar(centres[b][i], r.exact_or, yerr=[[r.exact_or - r.exact_ci_low], [r.exact_ci_high - r.exact_or]], fmt="o", ms=7, mfc=c, mec="#555555", mew=0.8, color=c, capsize=4, lw=1.3, zorder=3)
 ax_d.set_yscale("log"); ax_d.axhline(1, color="red", ls="--", lw=1, alpha=0.6); ax_d.set_ylim(0.8, 150)
 ax_d.set_ylabel("Odds ratio, top vs. bottom score decile\n(high-PIP, PIP ≥ 0.5)")
-despine(ax_d); panel_label(ax_d, "(d)", "enrichment of high-PIP variants among top-scored variants")
+despine(ax_d); panel_label(ax_d, "(D)", "enrichment of high-PIP variants among top-scored variants")
 
 fig.legend(handles=[Patch(facecolor=MODEL_COLORS[t], edgecolor="#555555", label=TOOL_LABELS[t], alpha=0.85) for t in MODELS], loc="upper center", ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.985), fontsize=12)
 fig.savefig(out_pdf, bbox_inches="tight", dpi=250); fig.savefig(out_pdf.replace(".pdf", ".png"), bbox_inches="tight", dpi=200); print("figure written", out_pdf)

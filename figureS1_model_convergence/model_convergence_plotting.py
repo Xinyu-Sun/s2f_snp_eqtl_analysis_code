@@ -368,7 +368,8 @@ def compute_model_convergence(df: pd.DataFrame, dataset_name: str) -> pd.DataFra
 def set_plot_style():
     """Set consistent plot style."""
     sns.set_style("whitegrid")
-    plt.rcParams["font.family"] = "sans-serif"
+    plt.rcParams["font.family"] = "Arial"
+    plt.rcParams["pdf.fonttype"] = 42
     plt.rcParams["font.size"] = 10
     plt.rcParams["axes.titlesize"] = 11
     plt.rcParams["axes.labelsize"] = 10
@@ -397,7 +398,7 @@ def plot_convergence_heatmaps(results_df: pd.DataFrame, output_dir: Path):
     conc_vmin, conc_vmax = rounded_limits(df["concordance"])
     corr_ticks = rounded_ticks(corr_vmin, corr_vmax)
     conc_ticks = rounded_ticks(conc_vmin, conc_vmax)
-    heatmap_cmap = plt.get_cmap("RdYlGn").copy()
+    heatmap_cmap = plt.get_cmap("viridis").copy()
     heatmap_cmap.set_bad("#e6e6e6")
 
     fig = plt.figure(figsize=(9.0 if len(datasets) == 2 else 4.8, 8.0))
@@ -437,7 +438,6 @@ def plot_convergence_heatmaps(results_df: pd.DataFrame, output_dir: Path):
             annot=True,
             fmt=".3f",
             cmap=heatmap_cmap,
-            center=0.5,
             ax=ax_top,
             cbar=(col_idx == len(datasets) - 1),
             cbar_ax=corr_cbar_ax if col_idx == len(datasets) - 1 else None,
@@ -475,7 +475,6 @@ def plot_convergence_heatmaps(results_df: pd.DataFrame, output_dir: Path):
             annot=True,
             fmt=".3f",
             cmap=heatmap_cmap,
-            center=0.5,
             ax=ax_bottom,
             cbar=(col_idx == len(datasets) - 1),
             cbar_ax=conc_cbar_ax if col_idx == len(datasets) - 1 else None,
@@ -523,7 +522,7 @@ def plot_convergence_heatmaps(results_df: pd.DataFrame, output_dir: Path):
         fig.text(
             pos.x0,
             pos.y1 + 0.068,
-            f"({chr(97 + col_idx)}) {dataset_labels.get(dataset, dataset)}",
+            f"({chr(65 + col_idx)}) {dataset_labels.get(dataset, dataset)}",
             fontsize=13,
             fontweight="bold",
             ha="left",

@@ -6,8 +6,8 @@ finemapped_stratified_concordance.tsv. Output (in $S2F_FIGURE_OUTPUT): fig_corr_
 
 2x2 layout. Each cell = Borzoi (left) + AlphaGenome (right) heatmap.
 Column headers: Borzoi | AlphaGenome at top.
-Row labels on left: (a)/(c) for row 0/1, subtitle at same height.
-Panel labels (a)(b)(c)(d) inside top-left of each left-hand heatmap.
+Row labels on left: (A)/(C) for row 0/1, subtitle at same height.
+Panel labels (A)(B)(C)(D) inside top-left of each left-hand heatmap.
 """
 import pandas as pd
 import math
@@ -18,7 +18,8 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import seaborn as sns
 
-plt.rcParams["font.family"] = "sans-serif"
+plt.rcParams["font.family"] = "Arial"
+plt.rcParams["pdf.fonttype"] = 42
 plt.rcParams["font.size"] = 10
 plt.rcParams["axes.titlesize"] = 11
 plt.rcParams["axes.labelsize"] = 10
@@ -95,7 +96,7 @@ nom_conc = nominal.rename(columns={"concordance": "concordance_rate"}).copy()
 fin_corr = pd.read_csv(FINE_CORR,   sep="\t")
 fin_conc = pd.read_csv(FINE_CONC,   sep="\t")
 
-# Use the same clean colorbar presentation as Figure 2. The data include a few
+# Use the same clean colorbar presentation as Figure S1. The data include a few
 # tiny negative Spearman estimates and a few concordance values just above 0.9,
 # but those edge cases are still printed in-cell; the shared scale is easier to
 # read across manuscript figures than data-derived labels such as -0.1 or 1.0.
@@ -103,25 +104,25 @@ corr_vmin, corr_vmax = 0.0, 1.0
 conc_vmin, conc_vmax = 0.4, 0.9
 CORR_NORM = mcolors.Normalize(vmin=corr_vmin, vmax=corr_vmax)
 CONC_NORM = mcolors.Normalize(vmin=conc_vmin, vmax=conc_vmax)
-HEATMAP_CMAP = plt.get_cmap("RdYlGn").copy()
+HEATMAP_CMAP = plt.get_cmap("viridis").copy()
 HEATMAP_CMAP.set_bad("#e6e6e6")
 
 # 2x2 panels: (row, col) -> plotting metadata
 panels = {
     (0, 0): {
-        "label": "a", "subtitle": "Nominal eQTLs", "df": nom_corr, "val": "spearman_r",
+        "label": "A", "subtitle": "Nominal eQTLs", "df": nom_corr, "val": "spearman_r",
         "cmap": HEATMAP_CMAP, "norm": CORR_NORM, "cbar": "Spearman r", "fmt": ".3f", "ancestries": ANCESTRIES_NOMINAL,
     },
     (0, 1): {
-        "label": "b", "subtitle": "Fine-mapped (PIP ≥ 0.9)", "df": fin_corr, "val": "spearman_r",
+        "label": "B", "subtitle": "Fine-mapped (PIP ≥ 0.9)", "df": fin_corr, "val": "spearman_r",
         "cmap": HEATMAP_CMAP, "norm": CORR_NORM, "cbar": "Spearman r", "fmt": ".3f", "ancestries": ANCESTRIES_FINE,
     },
     (1, 0): {
-        "label": "c", "subtitle": "Nominal eQTLs", "df": nom_conc, "val": "concordance_rate",
+        "label": "C", "subtitle": "Nominal eQTLs", "df": nom_conc, "val": "concordance_rate",
         "cmap": HEATMAP_CMAP, "norm": CONC_NORM, "cbar": "Concordance", "fmt": ".3f", "ancestries": ANCESTRIES_NOMINAL,
     },
     (1, 1): {
-        "label": "d", "subtitle": "Fine-mapped (PIP ≥ 0.9)", "df": fin_conc, "val": "concordance_rate",
+        "label": "D", "subtitle": "Fine-mapped (PIP ≥ 0.9)", "df": fin_conc, "val": "concordance_rate",
         "cmap": HEATMAP_CMAP, "norm": CONC_NORM, "cbar": "Concordance", "fmt": ".3f", "ancestries": ANCESTRIES_FINE,
     },
 }

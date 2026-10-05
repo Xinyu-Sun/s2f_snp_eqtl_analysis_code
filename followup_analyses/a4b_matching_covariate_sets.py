@@ -4,7 +4,7 @@ import sys, numpy as np, pandas as pd
 from fu_common import load_pairs, split_classes, matched_auroc, distance_bins, MODELS, ci
 pairs_path, out_dir = sys.argv[1], sys.argv[2]
 df = load_pairs(pairs_path)
-df["maf_bin"] = pd.cut(df["maf"], [0, 0.05, 0.2, 0.5], labels=["lt0.05", "0.05-0.2", "ge0.2"], include_lowest=True).astype(str)
+df["maf_bin"] = pd.cut(df["maf"], [0, 0.05, 0.2, 0.5 + 1e-9], labels=["lt0.05", "0.05-0.2", "ge0.2"], right=False).astype(str)  # MAF < 0.05, 0.05-0.2, >= 0.2
 SETS = {"tss_only": (True, False, False), "tss_maf": (True, True, False), "tss_z": (True, False, True), "z_only": (False, False, True), "tss_maf_z": (True, True, True)}
 rows = []
 for model, col in MODELS.items():

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render manuscript Figure 2 from the model-convergence summary table.
+"""Render manuscript Figure S1 from the model-convergence summary table.
 
 Input (in $S2F_RESULTS): model_convergence_results.tsv. Output (in $S2F_FIGURE_OUTPUT):
 model_convergence_heatmaps_manuscript.pdf/.png. Plotting code: model_convergence_plotting.py."""

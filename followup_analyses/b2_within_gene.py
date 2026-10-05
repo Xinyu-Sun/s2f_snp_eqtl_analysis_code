@@ -2,12 +2,12 @@
 For each high-PIP variant, the percentile of its |score| among low-PIP comparison variants of the SAME gene
 (ties count one half). The mean percentile equals a within-gene AUROC averaged over positives.
 Two versions: any same-gene comparison variant (at least 5), and same gene plus same TSS-distance bin (at least 3).
-Uncertainty: bootstrap over positive genes (B = 2000).
+Uncertainty: bootstrap over positive genes (B = 2000), with an independent random stream for each group.
 
 Outputs: b2_within_gene.tsv, b2_within_gene_differences.tsv
 """
 import sys, numpy as np, pandas as pd
-from fu_common import load_pairs, split_classes, GROUPS, MODELS, ci
+from fu_common import load_pairs, split_classes, GROUPS, MODELS, ci, group_rng, bootstrap_p
 pairs_path, out_dir = sys.argv[1], sys.argv[2]
 df = load_pairs(pairs_path); B = 2000
 rows, diffs = [], []
@@ -27,7 +27,7 @@ for model, col in MODELS.items():
             w = pd.DataFrame(rec, columns=["gene_id", "pct", "n_comp"])
             if len(w) < 5:
                 rows.append(dict(model=model, version=version, group=g, n_pos=len(pos), n_pos_evaluated=len(w), note="too few")); continue
-            rng = np.random.default_rng(42); gi = w.groupby("gene_id").indices; genes = list(gi)
+            rng = group_rng(42, g); gi = w.groupby("gene_id").indices; genes = list(gi)
             bs = np.array([w["pct"].values[np.concatenate([gi[x] for x in rng.choice(genes, size=len(genes), replace=True)])].mean() for _ in range(B)])
             store[g] = bs
             rows.append(dict(model=model, version=version, group=g, n_pos=len(pos), n_pos_evaluated=len(w), share_evaluated=len(w) / len(pos), n_genes=w.gene_id.nunique(),
@@ -37,6 +37,6 @@ for model, col in MODELS.items():
             if a_ in store and b_ in store:
                 d = store[a_] - store[b_]
                 diffs.append(dict(model=model, version=version, contrast=f"{a_}_minus_{b_}", diff_mean=d.mean(), ci_low=ci(d)[0], ci_high=ci(d)[1],
-                                  bootstrap_two_sided_p=min(1.0, 2 * min((d <= 0).mean(), (d >= 0).mean()))))
+                                  bootstrap_two_sided_p=bootstrap_p(d), n_replicates=len(d)))
 pd.DataFrame(rows).to_csv(f"{out_dir}/b2_within_gene.tsv", sep="\t", index=False)
 pd.DataFrame(diffs).to_csv(f"{out_dir}/b2_within_gene_differences.tsv", sep="\t", index=False); print("B2 done")

@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Build the benchmark prediction tables and the summary results behind Figures 1-3, S1 and Tables S1, S8-S10.
+"""Build the benchmark prediction tables and the summary results behind Figures 1, 2, S1, S2 and Tables S1, S8-S10.
 
 AA and NHW rows come from the base benchmark tables built with model_scoring/. CH rows come from the
 scored CH pairs (build_scoring_plan.py, collect_scores.py) of the regular-eQTL fine-mapping profile named
 by the FINEMAPPING_PROFILE environment variable. Other fine-mapping profiles and interaction-eQTL results
 are not mixed into the benchmark.
+
+Gene TSS (hg38_gene_locations.txt) and exact-cohort PLINK allele frequencies are filled for rows that do not
+carry them. The fine-mapping pool then follows one comparison rule in every group: low-PIP comparison variants
+have PIP < 0.01 and belong to no credible set; intermediate-PIP comparison variants are credible-set members with
+0.01 <= PIP < 0.5 (0.01 <= PIP < t at threshold t); positives (PIP >= 0.5) are kept. Distance-matched AUROC,
+its MAF-stratified version and the singleton credible-set sensitivity are computed with one routine for all
+three groups (100 iterations, seeds 42-141).
 """
 
 from __future__ import annotations
@@ -214,18 +221,122 @@ def convergence_table(nominal: pd.DataFrame, high_pip: pd.DataFrame) -> pd.DataF
 
 
 def add_log_distance(frame: pd.DataFrame) -> pd.DataFrame:
+    """log10 of the absolute TSS distance, floored at 1 bp; missing where the distance is unknown."""
     out = frame.copy()
+    distance = pd.Series(np.nan, index=out.index, dtype=float)
     if "distance_to_tss" in out:
         distance = pd.to_numeric(out["distance_to_tss"], errors="coerce").abs()
-    elif "tss" in out and "position" in out:
-        distance = (
+    if "tss" in out and "position" in out:
+        from_tss = (
             pd.to_numeric(out["position"], errors="coerce")
             - pd.to_numeric(out["tss"], errors="coerce")
         ).abs()
-    else:
-        distance = pd.Series(np.nan, index=out.index, dtype=float)
-    out["log_distance"] = np.log10(distance.where(distance > 0, 1.0))
+        distance = distance.where(distance.notna(), from_tss)
+    out["log_distance"] = np.log10(distance.clip(lower=1.0))
     return out
+
+
+def maf_bin(maf: pd.Series) -> pd.Series:
+    values = pd.to_numeric(maf, errors="coerce")
+    result = pd.Series(pd.NA, index=values.index, dtype="object")
+    result.loc[(values >= 0) & (values < 0.05)] = "lt0.05"
+    result.loc[(values >= 0.05) & (values < 0.2)] = "0.05-0.2"
+    result.loc[(values >= 0.2) & (values <= 0.5)] = "ge0.2"
+    return result
+
+
+def fill_tss_and_maf(frame: pd.DataFrame, gene_locations: Path, plink_maf: Path) -> pd.DataFrame:
+    """Fill gene TSS, absolute TSS distance, ALT frequency, MAF and MAF bin where a row lacks them.
+
+    TSS comes from hg38_gene_locations.txt; frequencies come from the exact-QTL-cohort PLINK table, joined on
+    group and chr:pos_REF_ALT so that the ALT frequency is oriented to the scored allele.
+    """
+    out = frame.copy().reset_index(drop=True)
+    for column in ("tss", "distance_to_tss", "alt_allele_freq", "af", "maf", "maf_bin"):
+        if column not in out:
+            out[column] = np.nan
+    genes = pd.read_csv(gene_locations, sep="\t", dtype={"ensgid": str})
+    genes = genes.rename(columns={"ensgid": "gene_id", "TSS": "tss_reference"})
+    genes["tss_reference"] = pd.to_numeric(genes["tss_reference"], errors="coerce")
+    genes = genes.dropna(subset=["tss_reference"]).drop_duplicates("gene_id")
+    tss = out["gene_id"].astype(str).map(genes.set_index("gene_id")["tss_reference"])
+    out["tss"] = pd.to_numeric(out["tss"], errors="coerce").where(lambda s: s.notna(), tss)
+    position = pd.to_numeric(out["position"], errors="coerce")
+    distance = pd.to_numeric(out["distance_to_tss"], errors="coerce").abs()
+    out["distance_to_tss"] = distance.where(distance.notna(), (position - out["tss"]).abs())
+
+    freq = pd.read_csv(
+        plink_maf, sep="\t", usecols=["ancestry", "plink_variant_id", "a1", "a1_frequency", "maf"]
+    )
+    if freq.duplicated(["ancestry", "plink_variant_id"]).any():
+        raise RuntimeError("The PLINK MAF table has duplicate group/variant rows")
+    variant = (
+        out["chromosome"].astype(str) + ":" + position.astype("Int64").astype(str)
+        + "_" + out["ref_allele"].astype(str) + "_" + out["alt_allele"].astype(str)
+    )
+    joined = pd.DataFrame({"ancestry": out["ancestry"], "plink_variant_id": variant}).merge(
+        freq, on=["ancestry", "plink_variant_id"], how="left", validate="many_to_one"
+    )
+    a1_frequency = pd.to_numeric(joined["a1_frequency"], errors="coerce")
+    alt_frequency = pd.Series(
+        np.where(
+            joined["a1"].eq(out["alt_allele"]),
+            a1_frequency,
+            np.where(joined["a1"].eq(out["ref_allele"]), 1 - a1_frequency, np.nan),
+        ),
+        index=out.index,
+    )
+    for column, values in (("alt_allele_freq", alt_frequency), ("af", alt_frequency), ("maf", joined["maf"])):
+        current = pd.to_numeric(out[column], errors="coerce")
+        out[column] = current.where(current.notna(), pd.to_numeric(values, errors="coerce"))
+    out["maf_bin"] = out["maf_bin"].where(out["maf_bin"].notna(), maf_bin(out["maf"]))
+    if "pair_key" not in out:
+        out["pair_key"] = np.nan
+    key = (
+        out["chromosome"].astype(str) + ":" + position.astype("Int64").astype(str) + ":"
+        + out["ref_allele"].astype(str) + ":" + out["alt_allele"].astype(str) + ":" + out["gene_id"].astype(str)
+    )
+    out["pair_key"] = out["pair_key"].where(out["pair_key"].notna(), key)
+    return out
+
+
+def comparison_class(frame: pd.DataFrame) -> pd.Series:
+    """positive (PIP >= 0.5), low (PIP < 0.01) or intermediate (0.01 <= PIP < 0.5)."""
+    pip = pd.to_numeric(frame["pip"], errors="coerce")
+    return pd.Series(
+        np.select([pip.ge(0.5), pip.lt(0.01)], ["positive", "low"], default="intermediate"),
+        index=frame.index,
+    )
+
+
+def apply_comparison_rule(frame: pd.DataFrame) -> pd.DataFrame:
+    """Low-PIP comparison variants: PIP < 0.01 and in no credible set. Intermediate-PIP comparison variants:
+    credible-set members with 0.01 <= PIP < 0.5. Positives (PIP >= 0.5) are kept."""
+    member = pd.to_numeric(frame["CS"], errors="coerce").fillna(0).ne(0)
+    cls = comparison_class(frame)
+    keep = cls.eq("positive") | (cls.eq("low") & ~member) | (cls.eq("intermediate") & member)
+    return frame[keep].copy()
+
+
+def pool_sizes(frame: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    cls = comparison_class(frame)
+    member = pd.to_numeric(frame["CS"], errors="coerce").fillna(0).ne(0)
+    for ancestry in ANCESTRIES:
+        for tool in TOOLS:
+            scored = frame["ancestry"].eq(ancestry) & frame[f"{tool}_score"].notna()
+            for name in ("positive", "low", "intermediate"):
+                mask = scored & cls.eq(name)
+                rows.append(
+                    {
+                        "ancestry": ancestry,
+                        "tool": tool,
+                        "pip_class": name,
+                        "n_pairs": int(mask.sum()),
+                        "n_credible_set_members": int((mask & member).sum()),
+                    }
+                )
+    return pd.DataFrame(rows)
 
 
 def distance_balanced(
@@ -304,35 +415,37 @@ def bootstrap_auc(
     }
 
 
-def ch_auroc_rows(ch_pool: pd.DataFrame) -> pd.DataFrame:
+def auroc_rows(pool: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for tool in TOOLS:
         score = f"{tool}_score"
-        for threshold in PIP_THRESHOLDS:
-            for mode in ("standard", "rest"):
-                result = bootstrap_auc(ch_pool, score, threshold, mode)
-                if result:
-                    row = {
-                        "tool": tool,
-                        "ancestry": "CH",
-                        "pip_threshold": threshold,
-                        "mode": mode,
-                    }
-                    row.update({key: result[key] for key in [
-                        "auc_mean", "auc_std", "auc_ci_low", "auc_ci_high",
-                        "n_pos", "n_neg", "n_bootstrap", "auc_values",
-                    ]})
-                    rows.append(row)
+        for ancestry in ANCESTRIES:
+            group = pool[pool["ancestry"].eq(ancestry)]
+            for threshold in PIP_THRESHOLDS:
+                for mode in ("standard", "rest"):
+                    result = bootstrap_auc(group, score, threshold, mode)
+                    if result:
+                        row = {
+                            "tool": tool,
+                            "ancestry": ancestry,
+                            "pip_threshold": threshold,
+                            "mode": mode,
+                        }
+                        row.update({key: result[key] for key in [
+                            "auc_mean", "auc_std", "auc_ci_low", "auc_ci_high",
+                            "n_pos", "n_neg", "n_bootstrap", "auc_values",
+                        ]})
+                        rows.append(row)
     return pd.DataFrame(rows)
 
 
-def ch_maf_rows(ch_pool: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def maf_rows(pool: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     summaries = []
     bootstraps = []
     for tool in TOOLS:
         score = f"{tool}_score"
-        for maf_group in MAF_BINS:
-            subset = ch_pool[ch_pool["maf_bin"].eq(maf_group)].copy()
+        for ancestry, maf_group in [(a, m) for a in ANCESTRIES for m in MAF_BINS]:
+            subset = pool[pool["ancestry"].eq(ancestry) & pool["maf_bin"].eq(maf_group)].copy()
             for threshold in PIP_THRESHOLDS:
                 result = bootstrap_auc(subset, score, threshold, "standard")
                 if not result:
@@ -340,7 +453,7 @@ def ch_maf_rows(ch_pool: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                 summaries.append(
                     {
                         "tool": tool,
-                        "ancestry": "CH",
+                        "ancestry": ancestry,
                         "maf_bin": maf_group,
                         "maf_bin_label": MAF_LABELS[maf_group],
                         "pip_threshold": threshold,
@@ -359,7 +472,7 @@ def ch_maf_rows(ch_pool: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                     bootstraps.append(
                         {
                             "tool": tool,
-                            "ancestry": "CH",
+                            "ancestry": ancestry,
                             "maf_bin": maf_group,
                             "maf_bin_label": MAF_LABELS[maf_group],
                             "pip_threshold": threshold,
@@ -389,53 +502,84 @@ def release_cs_sizes(members_path: Path) -> pd.DataFrame:
     ].copy()
     members["pair_key"] = pair_key_from_members(members)
     members["cs_size"] = members.groupby(["gene_id", "cs"])["variant_id"].transform("nunique")
-    return members[["pair_key", "gene_id", "cs", "cs_size", "pip"]].drop_duplicates("pair_key")
+    members["ancestry"] = "CH"
+    return members[["ancestry", "pair_key", "gene_id", "cs", "cs_size", "pip"]].drop_duplicates("pair_key")
 
 
-def ch_cs_sensitivity(ch_pool: pd.DataFrame, cs_sizes: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    frame = ch_pool.merge(cs_sizes[["pair_key", "cs_size"]], on="pair_key", how="left", validate="many_to_one")
+def base_cs_sizes(path: Path, ancestry: str) -> pd.DataFrame:
+    """Credible-set size (distinct variants per gene and credible-set index) from a SuSiE credible-set table
+    (MAGENTA_eQTLs_susie_pip_w_cs_<group>.txt; a2 = REF, a1 = ALT)."""
+    table = pd.read_csv(path, sep="\t", low_memory=False)
+    table["CS"] = pd.to_numeric(table["CS"], errors="coerce")
+    table = table[table["CS"].notna() & table["CS"].ne(0)].copy()
+    table["gene_id"] = table["molecular_trait_id"].astype(str)
+    chromosome = table["chrom"].astype(str).str.replace("^chr", "", regex=True)
+    table["pair_key"] = (
+        "chr" + chromosome + ":" + pd.to_numeric(table["pos"]).astype(int).astype(str) + ":"
+        + table["a2"].astype(str) + ":" + table["a1"].astype(str) + ":" + table["gene_id"]
+    )
+    table["cs_size"] = table.groupby(["gene_id", "CS"])["variant_id"].transform("nunique")
+    table["ancestry"] = ancestry
+    table = table.rename(columns={"CS": "cs"})
+    return table[["ancestry", "pair_key", "gene_id", "cs", "cs_size", "pip"]].drop_duplicates("pair_key")
+
+
+def cs_sensitivity(pool: pd.DataFrame, cs_sizes: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     result_rows = []
     size_rows = []
     for tool in TOOLS:
         score = f"{tool}_score"
-        positives = frame[frame["pip"].ge(0.9)].dropna(subset=[score]).copy()
-        size_rows.append(
-            {
-                "tool": tool,
-                "ancestry": "CH",
-                "n_positive": len(positives),
-                "n_singleton": int(positives["cs_size"].eq(1).sum()),
-                "pct_singleton": float(100 * positives["cs_size"].eq(1).mean()),
-                "median_cs_size": float(positives["cs_size"].median()),
-                "p90_cs_size": float(positives["cs_size"].quantile(0.9)),
-                "max_cs_size": int(positives["cs_size"].max()),
-            }
-        )
-        for mode in ("standard", "rest"):
-            for label, mask in [
-                ("all", pd.Series(True, index=frame.index)),
-                ("singleton", frame["cs_size"].eq(1)),
-            ]:
-                result = bootstrap_auc(frame, score, 0.9, mode, positive_mask=mask)
-                if result:
-                    result_rows.append(
-                        {
-                            "tool": tool,
-                            "ancestry": "CH",
-                            "mode": mode,
-                            "positive_subset": label,
-                            "pip_threshold": 0.9,
-                            "n_pos": result["n_pos"],
-                            "n_comparison": result["n_neg"],
-                            "auc_mean": result["auc_mean"],
-                            "auc_std": result["auc_std"],
-                            "auc_ci_low": result["auc_ci_low"],
-                            "auc_ci_high": result["auc_ci_high"],
-                            "n_bootstrap": result["n_bootstrap"],
-                            "auc_values": result["auc_values"],
-                        }
-                    )
+        for ancestry in ANCESTRIES:
+            sizes = cs_sizes[cs_sizes["ancestry"].eq(ancestry)][["pair_key", "cs_size"]]
+            frame = pool[pool["ancestry"].eq(ancestry)].merge(
+                sizes, on="pair_key", how="left", validate="many_to_one"
+            )
+            result, size = cs_rows(frame, tool, score, ancestry)
+            result_rows.extend(result)
+            size_rows.append(size)
     return pd.DataFrame(result_rows), pd.DataFrame(size_rows)
+
+
+def cs_rows(frame: pd.DataFrame, tool: str, score: str, ancestry: str) -> tuple[list[dict], dict]:
+    positives = frame[frame["pip"].ge(0.9)].dropna(subset=[score]).copy()
+    if positives["cs_size"].isna().any():
+        raise RuntimeError(f"{ancestry} {tool}: positives without a credible-set size")
+    size_row = {
+        "tool": tool,
+        "ancestry": ancestry,
+        "n_positive": len(positives),
+        "n_singleton": int(positives["cs_size"].eq(1).sum()),
+        "pct_singleton": float(100 * positives["cs_size"].eq(1).mean()),
+        "median_cs_size": float(positives["cs_size"].median()),
+        "p90_cs_size": float(positives["cs_size"].quantile(0.9)),
+        "max_cs_size": int(positives["cs_size"].max()),
+    }
+    result_rows = []
+    for mode in ("standard", "rest"):
+        for label, mask in [
+            ("all", pd.Series(True, index=frame.index)),
+            ("singleton", frame["cs_size"].eq(1)),
+        ]:
+            result = bootstrap_auc(frame, score, 0.9, mode, positive_mask=mask)
+            if result:
+                result_rows.append(
+                    {
+                        "tool": tool,
+                        "ancestry": ancestry,
+                        "mode": mode,
+                        "positive_subset": label,
+                        "pip_threshold": 0.9,
+                        "n_pos": result["n_pos"],
+                        "n_comparison": result["n_neg"],
+                        "auc_mean": result["auc_mean"],
+                        "auc_std": result["auc_std"],
+                        "auc_ci_low": result["auc_ci_low"],
+                        "auc_ci_high": result["auc_ci_high"],
+                        "n_bootstrap": result["n_bootstrap"],
+                        "auc_values": result["auc_values"],
+                    }
+                )
+    return result_rows, size_row
 
 
 def threshold_counts(frame: pd.DataFrame) -> pd.DataFrame:
@@ -457,12 +601,9 @@ def threshold_counts(frame: pd.DataFrame) -> pd.DataFrame:
 
 def positive_maf_summary(frame: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    observed_ancestries = [
-        ancestry for ancestry in ANCESTRIES if frame["ancestry"].eq(ancestry).any()
-    ]
     for tool in TOOLS:
         score = f"{tool}_score"
-        for ancestry in observed_ancestries:
+        for ancestry in ANCESTRIES:
             group = frame[frame["ancestry"].eq(ancestry)].dropna(subset=[score, "af", "maf"])
             for threshold in PIP_THRESHOLDS:
                 selected = group[group["pip"].ge(threshold)]
@@ -502,12 +643,12 @@ def main() -> None:
     parser.add_argument("--base-nominal", type=Path, required=True)
     parser.add_argument("--base-high-pip", type=Path, required=True)
     parser.add_argument("--base-auroc-pool", type=Path, required=True)
-    parser.add_argument("--base-auroc-results", type=Path, required=True)
-    parser.add_argument("--base-maf-summary", type=Path, required=True)
-    parser.add_argument("--base-maf-bootstrap", type=Path, required=True)
-    parser.add_argument("--base-positive-maf-summary", type=Path, required=True)
-    parser.add_argument("--base-cs-results", type=Path, required=True)
-    parser.add_argument("--base-cs-sizes", type=Path, required=True)
+    parser.add_argument(
+        "--base-credible-sets", nargs=2, type=Path, required=True, metavar=("AA_TABLE", "NHW_TABLE"),
+        help="MAGENTA_eQTLs_susie_pip_w_cs_AA.txt and MAGENTA_eQTLs_susie_pip_w_cs_NHW.txt",
+    )
+    parser.add_argument("--gene-locations", type=Path, required=True, help="hg38_gene_locations.txt")
+    parser.add_argument("--plink-maf", type=Path, required=True, help="benchmark_plink_maf_exact_qtl_cohorts.tsv.gz")
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -528,7 +669,7 @@ def main() -> None:
             f"observed: {observed}"
         )
     ch_nominal = standardize_ch(master, "nominal_benchmark")
-    ch_finemap = add_log_distance(standardize_ch(master, "finemapping_benchmark"))
+    ch_finemap = standardize_ch(master, "finemapping_benchmark")
 
     base_nominal = standardize_base_nominal(args.base_nominal)
     nominal = pd.concat([base_nominal, ch_nominal], ignore_index=True, sort=False)
@@ -542,8 +683,17 @@ def main() -> None:
     )
     write(high, args.output_dir / "finemapped_pip_ge_0.9_predictions_wide.tsv.gz")
 
-    base_pool = add_log_distance(standardize_base_finemap(args.base_auroc_pool))
-    pool = pd.concat([base_pool, ch_finemap], ignore_index=True, sort=False)
+    base_pool = standardize_base_finemap(args.base_auroc_pool)
+    selected = pd.concat([base_pool, ch_finemap], ignore_index=True, sort=False)
+    selected = add_log_distance(fill_tss_and_maf(selected, args.gene_locations, args.plink_maf))
+    missing = selected[["log_distance", "maf"]].isna().groupby(selected["ancestry"]).sum()
+    if missing.to_numpy().any():
+        raise RuntimeError(f"Pool rows without TSS distance or MAF:\n{missing}")
+    pool = apply_comparison_rule(selected)
+    sizes = pool_sizes(selected).merge(
+        pool_sizes(pool), on=["ancestry", "tool", "pip_class"], suffixes=("_selected", "_analyzed")
+    )
+    write(sizes, args.output_dir / "comparison_pool_sizes.tsv")
     write(pool, args.output_dir / "finemapped_auroc_selected_pairs_predictions_wide.tsv.gz")
 
     nominal_performance = performance_table(nominal, "Nominal eQTLs")
@@ -556,78 +706,42 @@ def main() -> None:
     write(fine_conc, args.output_dir / "finemapped_stratified_concordance.tsv")
     write(convergence, args.output_dir / "model_convergence_results.tsv")
 
-    base_auroc = pd.read_csv(args.base_auroc_results, sep="\t")
-    auroc = pd.concat([base_auroc[~base_auroc["ancestry"].eq("CH")], ch_auroc_rows(ch_finemap)])
-    auroc = auroc.sort_values(["tool", "ancestry", "mode", "pip_threshold"], kind="mergesort")
+    auroc = auroc_rows(pool).sort_values(["tool", "ancestry", "mode", "pip_threshold"], kind="mergesort")
     write(auroc, args.output_dir / "susie_auroc_bootstrap_results_manuscript.tsv")
 
-    base_maf_summary = pd.read_csv(args.base_maf_summary, sep="\t")
-    base_maf_bootstrap = pd.read_csv(args.base_maf_bootstrap, sep="\t")
-    ch_maf_summary, ch_maf_bootstrap = ch_maf_rows(ch_finemap)
-    maf_summary = pd.concat([base_maf_summary[~base_maf_summary["ancestry"].eq("CH")], ch_maf_summary])
-    maf_bootstrap = pd.concat([base_maf_bootstrap[~base_maf_bootstrap["ancestry"].eq("CH")], ch_maf_bootstrap])
+    maf_summary, maf_bootstrap = maf_rows(pool)
     write(maf_summary, args.output_dir / "susie_auroc_maf_stratified_results.tsv")
     write(maf_bootstrap, args.output_dir / "susie_auroc_maf_stratified_bootstrap.tsv.gz")
 
-    cs_sizes = release_cs_sizes(args.ch_members)
-    ch_cs_results, ch_cs_sizes = ch_cs_sensitivity(ch_finemap, cs_sizes)
-    base_cs_results = pd.read_csv(args.base_cs_results, sep="\t")
-    base_cs_sizes = pd.read_csv(args.base_cs_sizes, sep="\t")
-    cs_results = pd.concat([base_cs_results[~base_cs_results["ancestry"].eq("CH")], ch_cs_results])
-    cs_size_summary = pd.concat([base_cs_sizes[~base_cs_sizes["ancestry"].eq("CH")], ch_cs_sizes])
+    cs_sizes = pd.concat(
+        [
+            base_cs_sizes(args.base_credible_sets[0], "AA"),
+            release_cs_sizes(args.ch_members),
+            base_cs_sizes(args.base_credible_sets[1], "NHW"),
+        ],
+        ignore_index=True,
+    )
+    cs_results, cs_size_summary = cs_sensitivity(pool, cs_sizes)
     write(cs_results, args.output_dir / "credible_set_size_sensitivity_bootstrap.tsv")
     write(cs_size_summary, args.output_dir / "positive_credible_set_size_summary.tsv")
 
     write(threshold_counts(pool), args.output_dir / "finemapped_eqtl_pair_counts.tsv")
-    base_positive_maf = pd.read_csv(args.base_positive_maf_summary, sep="\t")
-    ch_positive_maf = positive_maf_summary(ch_finemap)
-    positive_maf = pd.concat(
-        [base_positive_maf[~base_positive_maf["ancestry"].eq("CH")], ch_positive_maf],
-        ignore_index=True,
-    )
-    positive_maf = positive_maf.reindex(columns=base_positive_maf.columns)
+    positive_maf = positive_maf_summary(pool)
     key_columns = ["tool", "ancestry", "pip_threshold"]
     expected_rows = len(TOOLS) * len(ANCESTRIES) * len(PIP_THRESHOLDS)
     if len(positive_maf) != expected_rows or positive_maf.duplicated(key_columns).any():
-        duplicates = positive_maf.loc[
-            positive_maf.duplicated(key_columns, keep=False), key_columns
-        ].to_dict("records")
         raise RuntimeError(
             "The positive-variant MAF table must contain exactly one row per tool/ancestry/PIP threshold; "
-            f"observed {len(positive_maf)} rows (expected {expected_rows}), "
-            f"duplicates={duplicates}"
+            f"observed {len(positive_maf)} rows (expected {expected_rows})"
         )
     write(positive_maf, args.output_dir / "positive_variant_maf_distribution.tsv")
-
-    selection_summary = (
-        ch_finemap.assign(
-            selection_class=np.select(
-                [
-                    ch_finemap["pip"].ge(0.5),
-                    ch_finemap["pip"].lt(0.01),
-                ],
-                ["positive_pip_ge_0.5", "sampled_negative_pip_lt_0.01"],
-                default="sampled_intermediate_pip_0.01_to_0.5",
-            )
-        )
-        .groupby("selection_class", observed=True)
-        .size()
-        .rename("n")
-        .reset_index()
-    )
-    selection_summary.insert(0, "ancestry", "CH")
-    write(selection_summary, args.output_dir / "ch_selected_pair_summary.tsv")
 
     summary = {
         "ch_nominal_rows": len(ch_nominal),
         "ch_high_pip_rows": len(ch_finemap[ch_finemap["pip"].ge(0.9)]),
-        "ch_finemap_pool_rows": len(ch_finemap),
-        "ch_high_pip_with_borzoi": int(
-            ch_finemap[ch_finemap["pip"].ge(0.9)]["borzoi_score"].notna().sum()
-        ),
-        "ch_high_pip_with_alphagenome": int(
-            ch_finemap[ch_finemap["pip"].ge(0.9)]["alphagenome_score"].notna().sum()
-        ),
+        "pool_rows_selected": len(selected),
+        "pool_rows_analyzed": len(pool),
+        "pool_rows_analyzed_by_group": pool["ancestry"].value_counts().sort_index().to_dict(),
         "profile": f"regular_{FINEMAPPING_PROFILE}",
         "bootstrap_seed": BASE_SEED,
         "bootstrap_replicates": N_BOOTSTRAP,

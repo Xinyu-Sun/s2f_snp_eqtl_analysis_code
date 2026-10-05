@@ -35,7 +35,6 @@ def main():
         BASE_DIR / "annotation_enrichment_results.tsv",
         BASE_DIR / "ancestry_enrichment_interactions.tsv",
         BASE_DIR / "permutation_calibration.tsv",
-        BASE_DIR / "manuscript_ready_summary.md",
         BASE_DIR / "logs" / "checksum_validation.tsv",
         BASE_DIR / "logs" / "positive_count_reproduction.tsv",
         BASE_DIR / "logs" / "plink_maf_validation.tsv",
@@ -148,8 +147,13 @@ def main():
         rows,
         "permutation_calibration",
         "permutation_calibration.tsv",
-        bool((permutation["status"] == "PASS").all() and len(permutation) == 1440),
-        "rows=%d failures=%d min_null_p=%s" % (len(permutation), int((permutation["status"] != "PASS").sum()), permutation["null_p_value"].min()),
+        bool((permutation["status"] != "FAIL").all() and len(permutation) == 1440),
+        "rows=%d failures=%d not_tested_degenerate=%d min_null_p=%s" % (
+            len(permutation),
+            int((permutation["status"] == "FAIL").sum()),
+            int((permutation["status"] == "NOT_TESTED_DEGENERATE").sum()),
+            permutation["null_p_value"].min(),
+        ),
     )
 
     out = pd.DataFrame(rows)

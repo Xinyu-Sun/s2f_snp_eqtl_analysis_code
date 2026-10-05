@@ -6,7 +6,8 @@
 #SBATCH --time=08:00:00
 #SBATCH --output=logs/followup_%j.out
 #SBATCH --error=logs/followup_%j.err
-# Invocation order of the follow-up analyses behind Figure 4 and Tables S3-S7, S11-S18, S23, S24 and S27.
+# Invocation order of the follow-up analyses behind Figures 3 and 4 and Tables S4-S7, S11-S17, S21, S22 and S25
+# (Table S3: external_replication/r1_eqtlgen_replication.py, which needs the per-group nominal tables and eQTLGen).
 # Run a56_make_variant_lists.py and a56_plink_ld_freq.sbatch first (LD and allele-frequency outputs in $F/ld, $F/freq).
 # Inputs from the data package:
 #   PAIRS   detailed_predictions/finemapped_auroc_selected_pairs_predictions_wide.tsv.gz
@@ -42,8 +43,20 @@ run $PY a4b_matching_covariate_sets.py $P $O
 run $PY a2_joint_bootstrap_auroc.py $P $O
 # B1 needs the AA/NHW per-gene SuSiE outputs, the CH compact PIP table and fine-mapped gene list, and FU_NOMINAL_DIR
 run $PY b1_label_transfer.py $P ${CH_COMPACT:-$F/inputs/ch_pip_ge_0.001_or_cs.tsv.gz} ${CH_GENES:-$F/inputs/ch_finemapped_genes.tsv} $O
+run $PY b8_shared_matched.py $P $O/b1_label_transfer_detail.tsv $FILER $O
 run $PY b5_model_first_lift_contrasts.py $YIELDS $O/b5_model_first_lift_contrasts.tsv
 run $PY a8_make_anatomy_figure.py $P $O $O/fig_aa_advantage_anatomy.pdf
-# LaTeX bodies of the follow-up supplementary tables (captions of existing table files are kept)
-run $PY make_followup_tables.py $O ${TABLES_DIR:-$F/tables}
+run $PY a10_make_accessible_figure.py $P $FILER $O $O/fig_accessible_chromatin.pdf
+# LaTeX bodies of the follow-up supplementary tables (captions of existing table files are kept); Table S15 joins the
+# LD-proxy table and the LD-adjusted regressions as parts A and B, and Table S17 joins the label-transfer table and the
+# matched shared-versus-group-specific comparison
+T=${TABLES_DIR:-$F/tables}
+run $PY make_followup_tables.py $O $T
+run $PY combine_tables.py --out $T/aa_advantage_ld_combined.tex --label stab:ld_proxies \
+  --caption "LD structure of high-PIP variants and its contribution to the group difference in score magnitude, related to Figure~3." \
+  --part $T/aa_advantage_ld_proxies.tex --part $T/aa_advantage_ld_proxy_regression.tex
+run $PY combine_tables.py --out $T/review_label_transfer_combined.tex --label stab:label_transfer \
+  --caption "Status of each group's high-PIP variants in the fine-mapping of the other two groups, and separation of shared and group-specific high-PIP variants, related to Figure~3." \
+  --part "$T/review_label_transfer.tex::Status of each group's high-PIP variants in the fine-mapping of the other two groups::High-PIP variants are PIP \$\\geq 0.9\$ and in a credible set; the lower block gives their distance-matched AUROC by sharing (positives resampled, 1,000 iterations). \`\`Variant not tested'' means the gene has a credible set in the other group but the variant did not pass its allele-count filter." \
+  --part $T/review_shared_matched.tex
 echo "ALL DONE $(date)"

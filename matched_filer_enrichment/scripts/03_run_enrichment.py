@@ -28,13 +28,28 @@ from filer_enrichment_lib import (
 BOOTSTRAP_REPS = 1000
 PERMUTATION_REPS = 200
 RNG = np.random.RandomState(SEED + 3000)
+LOG_OR_BOUND = 1000.0  # infinite log odds ratios (an empty margin in a resample) are held at +/- this bound for percentiles
 
 
 def percentile(values, q):
     vals = np.asarray([v for v in values if not pd.isna(v)], dtype=float)
     if len(vals) == 0:
         return np.nan
-    return float(np.percentile(vals, q))
+    return float(np.percentile(np.clip(vals, -LOG_OR_BOUND, LOG_OR_BOUND), q))
+
+
+def degenerate_categories(point_df):
+    """Categories whose table is degenerate: all or none of the matched positives are annotated, or the
+    Mantel-Haenszel odds ratio is 0 or infinite in a matching iteration. They are reported with p = 1 and
+    no odds ratio."""
+    out = {}
+    for cat, g in point_df.groupby("category", sort=False):
+        all_or_none = bool(
+            (g["positive_overlap_count"] == 0).all()
+            or (g["positive_overlap_count"] == g["matched_positive_units"]).all()
+        )
+        out[cat] = all_or_none or bool((~np.isfinite(g["log_or"].astype(float))).any())
+    return out
 
 
 def safe_percentile_exp(values, q):
@@ -65,7 +80,8 @@ def mh_arrays(pos_mat, ctrl_mat, n_controls, weights=None, return_p=False):
 
     numerator = np.sum(weight * a * d / n_col, axis=0)
     denominator = np.sum(weight * b * c / n_col, axis=0)
-    log_or = np.log((numerator + 0.5) / (denominator + 0.5))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_or = np.log(numerator) - np.log(denominator)
 
     if not return_p:
         return log_or
@@ -241,11 +257,12 @@ def permute_combo(iter_groups):
     return out
 
 
-def summarize_enrichment(base, point_df, boot_mat):
+def summarize_enrichment(base, point_df, boot_mat, degenerate):
     rows = []
     for j, cat in enumerate(CATEGORIES):
         cat_points = point_df[point_df["category"] == cat]
         boots = boot_mat[:, j]
+        finite_points = cat_points["log_or"][np.isfinite(cat_points["log_or"].astype(float))]
         row = dict(base)
         row.update(
             {
@@ -259,10 +276,10 @@ def summarize_enrichment(base, point_df, boot_mat):
                 "positive_overlap_fraction_median": float(cat_points["positive_overlap_fraction"].median()),
                 "control_overlap_fraction_median": float(cat_points["control_overlap_fraction"].median()),
                 "informative_strata_median": float(cat_points["informative_strata"].median()),
-                "iteration_log_or_median": float(cat_points["log_or"].median()),
-                "iteration_or_median": safe_exp(float(cat_points["log_or"].median())),
-                "iteration_log_or_min": float(cat_points["log_or"].min()),
-                "iteration_log_or_max": float(cat_points["log_or"].max()),
+                "iteration_log_or_median": float(finite_points.median()) if len(finite_points) else np.nan,
+                "iteration_or_median": safe_exp(float(finite_points.median())) if len(finite_points) else np.nan,
+                "iteration_log_or_min": float(finite_points.min()) if len(finite_points) else np.nan,
+                "iteration_log_or_max": float(finite_points.max()) if len(finite_points) else np.nan,
                 "cmh_p_value_median": float(cat_points["cmh_p_value"].median())
                 if cat_points["cmh_p_value"].notna().any()
                 else np.nan,
@@ -271,13 +288,17 @@ def summarize_enrichment(base, point_df, boot_mat):
                 "ci95_low": safe_percentile_exp(boots, 2.5),
                 "ci95_high": safe_percentile_exp(boots, 97.5),
                 "bootstrap_p_value": empirical_p_from_boot(boots),
+                "degenerate_table": int(degenerate[cat]),
             }
         )
+        if degenerate[cat]:
+            row.update({"bootstrap_log_or_median": np.nan, "odds_ratio": np.nan, "ci95_low": np.nan,
+                        "ci95_high": np.nan, "bootstrap_p_value": 1.0})
         rows.append(row)
     return rows
 
 
-def summarize_permutation(base, perm_mat):
+def summarize_permutation(base, perm_mat, degenerate):
     rows = []
     for j, cat in enumerate(CATEGORIES):
         vals = perm_mat[:, j]
@@ -301,7 +322,8 @@ def summarize_permutation(base, perm_mat):
                 "null_p_value": null_p,
                 "center_pass": center_pass,
                 "ci_includes_one": ci_includes_one,
-                "status": "PASS" if center_pass and ci_includes_one else "FAIL",
+                "degenerate_table": int(degenerate[cat]),
+                "status": "NOT_TESTED_DEGENERATE" if degenerate[cat] else ("PASS" if center_pass and ci_includes_one else "FAIL"),
             }
         )
         rows.append(row)
@@ -323,6 +345,7 @@ def main():
     permutation_rows = []
     boot_by_key = {}
     perm_by_key = {}
+    degenerate_by_key = {}
 
     total = len(UNIT_TYPES) * len(MODELS) * len(ANCESTRIES) * len(COMPARISONS)
     done = 0
@@ -352,13 +375,15 @@ def main():
                     point_df = iteration_point_rows(iter_groups, base)
                     boot_mat = bootstrap_combo(iter_groups)
                     perm_mat = permute_combo(iter_groups)
+                    degenerate = degenerate_categories(point_df)
                     point_rows.append(point_df)
-                    enrichment_rows.extend(summarize_enrichment(base, point_df, boot_mat))
-                    permutation_rows.extend(summarize_permutation(base, perm_mat))
+                    enrichment_rows.extend(summarize_enrichment(base, point_df, boot_mat, degenerate))
+                    permutation_rows.extend(summarize_permutation(base, perm_mat, degenerate))
                     for j, cat in enumerate(CATEGORIES):
                         key = combo_key(unit_type, model, ancestry, threshold, background) + (cat,)
                         boot_by_key[key] = boot_mat[:, j].copy()
                         perm_by_key[key] = perm_mat[:, j].copy()
+                        degenerate_by_key[key] = degenerate[cat]
                     print("[inference] %d / %d %s %s %s pip>=%s %s" % (done, total, unit_type, model, ancestry, threshold, background), flush=True)
 
     enrichment = pd.DataFrame(enrichment_rows)
@@ -381,7 +406,9 @@ def main():
                     for anc_a, anc_b in [("AA", "NHW"), ("AA", "CH"), ("CH", "NHW")]:
                         key_a = combo_key(unit_type, model, anc_a, threshold, background) + (cat,)
                         key_b = combo_key(unit_type, model, anc_b, threshold, background) + (cat,)
-                        boot_diff = boot_by_key[key_a] - boot_by_key[key_b]
+                        degenerate_pair = degenerate_by_key[key_a] or degenerate_by_key[key_b]
+                        with np.errstate(invalid="ignore"):
+                            boot_diff = np.clip(boot_by_key[key_a], -LOG_OR_BOUND, LOG_OR_BOUND) - np.clip(boot_by_key[key_b], -LOG_OR_BOUND, LOG_OR_BOUND)
                         point_a = enrichment[
                             (enrichment["unit_type"] == unit_type)
                             & (enrichment["model"] == model)
@@ -408,12 +435,13 @@ def main():
                                 "contrast": "%s_vs_%s" % (anc_a, anc_b),
                                 "ancestry_a": anc_a,
                                 "ancestry_b": anc_b,
-                                "log_or_difference": float(point_a - point_b),
-                                "interaction_odds_ratio": safe_exp(point_a - point_b),
-                                "ci95_low": safe_percentile_exp(boot_diff, 2.5),
-                                "ci95_high": safe_percentile_exp(boot_diff, 97.5),
-                                "bootstrap_p_value": empirical_p_from_boot(boot_diff),
+                                "log_or_difference": np.nan if degenerate_pair else float(point_a - point_b),
+                                "interaction_odds_ratio": np.nan if degenerate_pair else safe_exp(point_a - point_b),
+                                "ci95_low": np.nan if degenerate_pair else safe_percentile_exp(boot_diff, 2.5),
+                                "ci95_high": np.nan if degenerate_pair else safe_percentile_exp(boot_diff, 97.5),
+                                "bootstrap_p_value": 1.0 if degenerate_pair else empirical_p_from_boot(boot_diff),
                                 "bootstrap_reps": BOOTSTRAP_REPS,
+                                "degenerate_table": int(degenerate_pair),
                             }
                         )
 
@@ -433,7 +461,9 @@ def main():
                     for anc_a, anc_b in [("AA", "NHW"), ("AA", "CH"), ("CH", "NHW")]:
                         key_a = combo_key(unit_type, model, anc_a, threshold, background) + (cat,)
                         key_b = combo_key(unit_type, model, anc_b, threshold, background) + (cat,)
-                        vals = perm_by_key[key_a] - perm_by_key[key_b]
+                        degenerate_pair = degenerate_by_key[key_a] or degenerate_by_key[key_b]
+                        with np.errstate(invalid="ignore"):
+                            vals = np.clip(perm_by_key[key_a], -LOG_OR_BOUND, LOG_OR_BOUND) - np.clip(perm_by_key[key_b], -LOG_OR_BOUND, LOG_OR_BOUND)
                         median_log = percentile(vals, 50)
                         low_log = percentile(vals, 2.5)
                         high_log = percentile(vals, 97.5)
@@ -458,13 +488,14 @@ def main():
                                 "null_p_value": empirical_p_from_boot(vals),
                                 "center_pass": center_pass,
                                 "ci_includes_one": ci_includes_one,
-                                "status": "PASS" if center_pass and ci_includes_one else "FAIL",
+                                "degenerate_table": int(degenerate_pair),
+                                "status": "NOT_TESTED_DEGENERATE" if degenerate_pair else ("PASS" if center_pass and ci_includes_one else "FAIL"),
                             }
                         )
 
     permutation = pd.DataFrame(permutation_rows)
     permutation.to_csv(BASE_DIR / "permutation_calibration.tsv", sep="\t", index=False)
-    failures = permutation[permutation["status"] != "PASS"]
+    failures = permutation[permutation["status"] == "FAIL"]
     if len(failures):
         failures.to_csv(BASE_DIR / "logs" / "permutation_calibration_failures.tsv", sep="\t", index=False)
         raise SystemExit("Permutation calibration failed for %d rows" % len(failures))

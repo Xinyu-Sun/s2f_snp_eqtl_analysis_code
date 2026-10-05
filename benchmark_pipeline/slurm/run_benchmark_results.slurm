@@ -15,7 +15,8 @@ set -euo pipefail
 project=${PROJECT_DIR:-/path/to/project}
 repo=${REPO_DIR:-/path/to/s2f_snp_eqtl_analysis_code}
 release=${EQTL_RELEASE_DIR:-/path/to/eqtl_four_population_20260922}
-# AA and NHW base benchmark tables (model_scoring/ outputs)
+# AA and NHW base benchmark tables (model_scoring/ outputs), their SuSiE credible-set tables, the gene TSS table and
+# the exact-cohort PLINK MAF table (matched_filer_enrichment/plink_maf/ and the AA/NHW PLINK runs)
 inputs=${BASE_TABLES_DIR:-${project}/reference_inputs}
 export FINEMAPPING_PROFILE=${FINEMAPPING_PROFILE:?set to the regular-eQTL fine-mapping profile label of the CH release}
 
@@ -25,10 +26,7 @@ python -u "${repo}/benchmark_pipeline/build_benchmark_results.py" \
   --base-nominal "${inputs}/nominal_eqtl_10k_predictions_wide.tsv.gz" \
   --base-high-pip "${inputs}/finemapped_pip_ge_0.9_predictions_wide.tsv.gz" \
   --base-auroc-pool "${inputs}/finemapped_auroc_selected_pairs_predictions_wide.tsv.gz" \
-  --base-auroc-results "${inputs}/susie_auroc_bootstrap_results_manuscript_full100.tsv" \
-  --base-maf-summary "${inputs}/susie_auroc_maf_stratified_results_full100.tsv" \
-  --base-maf-bootstrap "${inputs}/figureS1_maf_stratified_auroc_bootstrap.tsv.gz" \
-  --base-positive-maf-summary "${inputs}/positive_variant_maf_distribution.tsv" \
-  --base-cs-results "${inputs}/credible_set_size_sensitivity_bootstrap.tsv" \
-  --base-cs-sizes "${inputs}/positive_credible_set_size_summary.tsv" \
+  --base-credible-sets "${inputs}/MAGENTA_eQTLs_susie_pip_w_cs_AA.txt" "${inputs}/MAGENTA_eQTLs_susie_pip_w_cs_NHW.txt" \
+  --gene-locations "${inputs}/hg38_gene_locations.txt" \
+  --plink-maf "${inputs}/benchmark_plink_maf_exact_qtl_cohorts.tsv.gz" \
   --output-dir "${project}/benchmark_results"

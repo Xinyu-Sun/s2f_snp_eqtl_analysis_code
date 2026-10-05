@@ -1,9 +1,9 @@
 """
-Regenerate the manuscript Figure 3 AUROC boxplot from the saved 100-bootstrap TSV.
+Regenerate the manuscript Figure 2 AUROC boxplot from the saved 100-bootstrap TSV.
 
 Two rows x three columns:
-(a) high-PIP positives vs low-PIP (<0.01) comparators
-(b) high-PIP positives vs intermediate-PIP comparators
+(A) high-PIP positives vs low-PIP (<0.01, in no credible set) comparison variants
+(B) high-PIP positives vs intermediate-PIP (credible-set member) comparison variants
 
 This script uses the stored bootstrap AUROC values directly
 (susie_auroc_bootstrap_results_manuscript.tsv in $S2F_RESULTS).
@@ -31,12 +31,13 @@ TOOL_LABELS = {"borzoi": "Borzoi", "alphagenome": "AlphaGenome"}
 THRESHOLDS = [0.5, 0.6, 0.7, 0.8, 0.9]
 MODES = ["standard", "rest"]
 MODE_LABELS = {"standard": "vs. low PIP (<0.01)", "rest": "vs. intermediate PIP"}
-PANEL_LBL = {"standard": "a", "rest": "b"}
+PANEL_LBL = {"standard": "A", "rest": "B"}
 MODEL_COLORS = {"borzoi": "#E64B35", "alphagenome": "#4DBBD5"}
 
 # Slightly larger typography for the manuscript figure.
 plt.rcParams.update({
-    "font.family": "sans-serif",
+    "font.family": "Arial",
+    "pdf.fonttype": 42,
     "font.size": 12,
     "axes.titlesize": 13,
     "axes.labelsize": 12,
@@ -138,7 +139,7 @@ legend_handles = [
 fig.legend(handles=legend_handles, loc="upper center", ncol=2, frameon=False, bbox_to_anchor=(0.5, 0.995), fontsize=12)
 
 for suffix in [".pdf", ".png"]:
-    out = OUT / f"figure3_distance_matched_auroc_boxplot{suffix}"
+    out = OUT / f"figure2_distance_matched_auroc_boxplot{suffix}"
     fig.savefig(out, bbox_inches="tight", dpi=250)
     print(f"[OK] Saved {out}")
 

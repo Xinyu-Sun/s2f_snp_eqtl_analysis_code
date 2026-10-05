@@ -1,3 +1,5 @@
 regenerated_outputs/
 __pycache__/
 *.pyc
+.Rhistory
+code_review_*.md

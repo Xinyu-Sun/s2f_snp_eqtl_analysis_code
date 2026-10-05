@@ -1,5 +1,7 @@
 """A6. Frequency class of each group's positives in the other two cohorts (PLINK --freq with --keep-allele-order: the MAF
-column is the ALT frequency), and score magnitude / AUROC by class."""
+column is the ALT frequency and NCHROBS the number of observed allele copies), and score magnitude / AUROC by class.
+A variant counts as absent from a cohort when it is not in that cohort's genotype file or its minor allele count there
+(minor allele frequency x NCHROBS) is below 10."""
 import sys, glob, numpy as np, pandas as pd
 from fu_common import load_pairs, split_classes, matched_auroc, distance_bins, GROUPS, MODELS, ci
 pairs_path, freq_dir, out_dir = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -9,7 +11,10 @@ fr = {}
 for g in GROUPS:
     parts = [pd.read_csv(f, sep=r"\s+") for f in glob.glob(f"{freq_dir}/{g}.chr*.frq")]
     if parts:
-        t = pd.concat(parts); t["maf_calc"] = np.minimum(t["MAF"], 1 - t["MAF"]); fr[g] = t.set_index("SNP")["maf_calc"]
+        t = pd.concat(parts); t["maf_calc"] = np.minimum(t["MAF"], 1 - t["MAF"])
+        t["mac"] = np.rint(t["maf_calc"] * t["NCHROBS"])
+        t.loc[t["mac"] < 10, "maf_calc"] = np.nan  # MAC < 10 in this cohort: treated as absent
+        fr[g] = t.set_index("SNP")["maf_calc"]
 # positives scored by either model (as in a5); each model's median and AUROC below use that model's own scored positives
 _d = df.dropna(subset=["log_dist", "pip"])
 _d = _d[(_d["pip"] >= 0.5) & (_d["borzoi_score"].notna() | _d["alphagenome_score"].notna())]

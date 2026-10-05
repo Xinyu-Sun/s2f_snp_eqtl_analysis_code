@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compute FILER annotation composition of the high-PIP positive sets (Tables S20-S22 sources)."""
+"""Compute FILER annotation composition of the high-PIP positive sets (sources of Tables S19 and S20)."""
 
 from __future__ import annotations
 
